@@ -297,8 +297,8 @@ var ART = [
 ];
 
 var REF = {};              /* card -> hash, built from card art */
-var REF_KEY = "chaosRefHashes_v17";
-var refState = { done:0, total:0, failed:0, running:false };
+var REF_KEY = "chaosRefHashes_v18";
+var refState = { done:0, total:0, failed:0, running:false, why:null };
 
 /* Same fingerprint as the screenshot crop: the centre square of
    the artwork, so both sides see the same shape. */
@@ -396,16 +396,23 @@ function loadRefs(cb){
   names.forEach(function(name){
     var i = 0;
     function attempt(){
-      if (i >= ART.length){ refState.failed++; tick(); return; }
+      if (i >= ART.length){
+        refState.failed++;
+        refState.why = refState.why || ("404: cards/"+SLUG[name]+".png");
+        tick(); return;
+      }
       var img = new Image();
-      img.crossOrigin = "anonymous";
+      var url = ART[i].replace("{s}", SLUG[name]);
+      /* same-origin images need no CORS attribute, and asking for one
+         makes the load fail if the host does not answer with it */
+      if (/^https?:/.test(url)) img.crossOrigin = "anonymous";
       img.onload = function(){
         try { REF[name] = refSig(img); }
-        catch(err){ refState.failed++; tick(); return; }   /* tainted canvas */
+        catch(err){ refState.failed++; refState.why = refState.why || ("read: "+err.message); tick(); return; }   /* tainted canvas */
         tick();
       };
       img.onerror = function(){ i++; attempt(); };
-      img.src = ART[i].replace("{s}", SLUG[name]);
+      img.src = url;
     }
     attempt();
   });
@@ -559,7 +566,11 @@ function vScan(){
     + '<div class="mk" id="mk"></div></div></div>'
     + '<button class="ghost" data-reset="1">New screenshot</button>';
   var r=Object.keys(REF).length;
-  if (r < refState.total) h += '<div class="meta">card art '+r+'/'+refState.total+'</div>';
+  if (r < refState.total){
+    h += '<div class="meta">card art '+r+'/'+refState.total
+      + (refState.failed?' &middot; '+refState.failed+' failed':'')
+      + (refState.why?' &middot; '+esc(refState.why):'') + '</div>';
+  }
   return h;
 }
 
