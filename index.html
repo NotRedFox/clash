@@ -102,6 +102,11 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-of
 .grid button{display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 2px;
   background:var(--bg);border-radius:4px}
 .grid img{width:100%;max-width:56px;aspect-ratio:3/4;object-fit:contain}
+.pairs{display:flex;gap:14px;flex-wrap:wrap}
+.pair{display:flex;gap:4px}
+.pair img,.ids img{width:54px;height:72px;object-fit:cover;background:#000;display:block}
+.pair span,.ids span{font-size:.55rem;color:var(--low);display:block;margin-top:3px;text-align:center}
+.ids{display:flex;gap:10px;flex-wrap:wrap}
 .diag{padding:0 16px 12px;display:flex;flex-direction:column;gap:10px}
 .diagCol{border-top:1px solid var(--line);padding-top:8px}
 .diagH{font-size:.62rem;letter-spacing:.08em;text-transform:uppercase;color:var(--low);margin-bottom:5px}
@@ -741,6 +746,41 @@ function verdict(c,win,rank){
       }).join("") + '</div></div>';
 }
 
+
+/* Render a crop to a data URL so it can be eyeballed. */
+function cropURL(img, x, y, w, h, outW, outH){
+  var c=document.createElement("canvas"); c.width=outW; c.height=outH;
+  var g=c.getContext("2d");
+  g.fillStyle="#000"; g.fillRect(0,0,outW,outH);
+  g.drawImage(img, x, y, w, h, 0, 0, outW, outH);
+  try { return c.toDataURL(); } catch(e){ return ""; }
+}
+
+/* Slot crop exactly as the matcher sees it. */
+function slotCropURL(t){
+  if(!S.img) return "";
+  var x = t.x - t.w/2 + t.w*ART_X0;
+  var y = t.y - t.h/2 + t.h*ART_Y0;
+  return cropURL(S.img, x, y, t.w*(ART_X1-ART_X0), t.h*(ART_Y1-ART_Y0), 72, 96);
+}
+
+/* Reference crop exactly as the matcher sees it, loaded fresh so we
+   are looking at the real file rather than a stored vector. */
+var REFPIC = {};
+function refCropURL(name, cb){
+  if(REFPIC[name]) return REFPIC[name];
+  if(!SLUG[name]) return "";
+  var im=new Image();
+  im.onload=function(){
+    var W=im.naturalWidth, H=im.naturalHeight;
+    REFPIC[name]=cropURL(im, W*ART_X0, H*ART_Y0,
+                             W*(ART_X1-ART_X0), H*(ART_Y1-ART_Y0), 72, 96);
+    if(cb) cb();
+  };
+  im.src="cards/"+SLUG[name]+".png";
+  return "";
+}
+
 function refCells(){
   var k=Object.keys(REF)[0];
   if(!k||!REF[k]||!REF[k].m) return "?";
@@ -748,8 +788,31 @@ function refCells(){
   return n+"/"+REF[k].m.length;
 }
 
+function pairBlock(){
+  var check = ["Rocket","Golem","Heal Spirit","Ice Spirit"];
+  check.forEach(function(n){ refCropURL(n, function(){ if(S.tab==="scan") render(); }); });
+
+  var slots = S.taps.map(function(t,i){
+    var top = t.cands && t.cands[0];
+    if(top) refCropURL(top, function(){ if(S.tab==="scan") render(); });
+    return '<div class="pair">'
+      + '<div><img src="'+slotCropURL(t)+'"><span>slot '+(i+1)+'</span></div>'
+      + '<div><img src="'+(top?(REFPIC[top]||""):"")+'"><span>'+esc(top||"-")+'</span></div>'
+      + '</div>';
+  }).join("");
+
+  var ids = check.map(function(n){
+    return '<div><img src="'+(REFPIC[n]||"")+'"><span>'+esc(SLUG[n]||"?")+'.png</span></div>';
+  }).join("");
+
+  return '<div class="diagCol"><div class="diagH">crop vs top match</div>'
+    + '<div class="pairs">'+slots+'</div></div>'
+    + '<div class="diagCol"><div class="diagH">reference identity check</div>'
+    + '<div class="ids">'+ids+'</div></div>';
+}
+
 function diagBlock(){
-  return '<div class="diag">' + S.taps.map(function(t,i){
+  return '<div class="diag">' + pairBlock() + S.taps.map(function(t,i){
     var rows = (t.cands||[]).map(function(nm,j){
       var v = (t.scores && t.scores[nm]!==undefined) ? t.scores[nm].toFixed(1) : "-";
       return '<div><span>'+(j+1)+'. '+esc(nm)+'</span><b>'+v+'</b></div>';
