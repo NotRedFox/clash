@@ -1189,6 +1189,64 @@ function refFeat(name){
   return FEAT[name];
 }
 
+
+/* ── crop verification ─────────────────────────────────────────── */
+function boxOverlay(){
+  if(!S.img) return "";
+  var W=S.img.naturalWidth, H=S.img.naturalHeight;
+  var c=document.createElement("canvas"); c.width=W; c.height=H;
+  var g=c.getContext("2d");
+  g.drawImage(S.img,0,0);
+  g.lineWidth = Math.max(1, Math.round(W/300));
+  g.strokeStyle="#FFD400";
+  g.fillStyle="#FFD400";
+  g.font = Math.round(W/40)+"px sans-serif";
+  S.taps.forEach(function(t,i){
+    g.strokeRect(t.x-t.w/2, t.y-t.h/2, t.w, t.h);
+    g.fillText(String(i+1), t.x-t.w/2+2, t.y-t.h/2+W/38);
+  });
+  var url; try{ url=c.toDataURL(); }catch(e){ return ""; }
+  return '<div class="diagCol"><div class="diagH">crop boxes on the natural '
+    + W+'x'+H+' screenshot</div>'
+    + '<img src="'+url+'" style="width:100%;display:block;margin-top:6px">'
+    + '</div>';
+}
+
+function rawCrops(){
+  if(!S.img || !S.taps.length) return "";
+  var out = S.taps.slice(0,2).map(function(t,i){
+    var w=Math.round(t.w), h=Math.round(t.h);
+    var c=document.createElement("canvas"); c.width=w; c.height=h;
+    var g=c.getContext("2d");
+    g.imageSmoothingEnabled=false;
+    g.drawImage(S.img, t.x-t.w/2, t.y-t.h/2, t.w, t.h, 0, 0, w, h);
+    var url; try{ url=c.toDataURL(); }catch(e){ url=""; }
+    return '<div style="text-align:center">'
+      + '<img src="'+url+'" style="width:'+(w*4)+'px;image-rendering:pixelated;'
+      + 'display:block;background:#000">'
+      + '<span>slot '+(i+1)+' &middot; '+w+'x'+h
+      + ' &middot; aspect '+(w/h).toFixed(2)+'</span></div>';
+  }).join("");
+  return '<div class="diagCol"><div class="diagH">raw crops, no resizing</div>'
+    + '<div class="pairs">'+out+'</div></div>';
+}
+
+function cropScaleTest(){
+  if(!S.img || !S.taps.length) return "";
+  var t=S.taps[0];
+  var top=t.cands && t.cands[0];
+  if(!top || !refFeat(top)) return "";
+  var rows=[["A current",1.0],["B +10%",1.10],["C +20%",1.20]].map(function(v){
+    var w=t.w*v[1], h=t.h*v[1];
+    var f=featureSet(S.img, t.x-w/2, t.y-h/2, w, h);
+    var m=matchDetail(f, refFeat(top));
+    return '<div><span>'+v[0]+' &middot; '+Math.round(w)+'x'+Math.round(h)+'</span>'
+      + '<b>kp '+f.pts.length+' &middot; good '+m.good+' &middot; geo '+m.geo+'</b></div>';
+  }).join("");
+  return '<div class="diagCol"><div class="diagH">crop scale test &middot; slot 1 vs '
+    + esc(top)+'</div>'+rows+'</div>';
+}
+
 function resTest(){
   if(!S.img || !S.taps.length) return "";
   var t = S.taps[0];
@@ -1403,7 +1461,7 @@ function pairBlock(){
 }
 
 function diagBlock(){
-  return '<div class="diag">' + baselineBlock() + resTest() + featureBlock() + expBlock() + sweepBlock() + pairBlock() + S.taps.map(function(t,i){
+  return '<div class="diag">' + boxOverlay() + rawCrops() + cropScaleTest() + baselineBlock() + resTest() + featureBlock() + expBlock() + sweepBlock() + pairBlock() + S.taps.map(function(t,i){
     var rows = (t.cands||[]).map(function(nm,j){
       var d = t.detail && t.detail[nm];
       var v = d ? ('geo '+d.geo+' &middot; good '+d.good
@@ -1419,6 +1477,11 @@ function diagBlock(){
       + ' &middot; crop '+Math.round(t.w)+'x'+Math.round(t.h)
       + ' &middot; kp '+(t.kp===undefined?"?":t.kp)
       + ' &middot; gap '+((t.conf||0)*100).toFixed(0)
+      + (t.cands && t.cands[1] && t.detail
+          ? ' &middot; 2nd '+esc(t.cands[1])
+            +' geo '+t.detail[t.cands[1]].geo
+            +' good '+t.detail[t.cands[1]].good
+          : "")
       + ' &middot; ref cells '+refCells()
       + '</div>'+rows+'</div>';
   }).join("") + '</div>';
