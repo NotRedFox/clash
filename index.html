@@ -647,6 +647,7 @@ function recognise(cx, cy, w, hh){
      Higher is better here, so scores are negated to keep the rest of
      the pipeline sorting ascending. */
   var A = featureSet(S.img, cx-w/2, cy-hh/2, w, hh);
+  var kpCount = A.pts.length;
   var featRaw={}, artRaw={}, detail={};
   pool.forEach(function(nm){
     var rf = refFeat(nm);
@@ -656,18 +657,17 @@ function recognise(cx, cy, w, hh){
     artRaw[nm]  = REF[nm] ? artworkScore(S.img, cx-w/2, cy-hh/2, w, hh, REF[nm]) : 1e9;
   });
 
-  /* Feature matching needs pixels. A full size card gives it plenty,
-     a mega draft tile does not, so trust it in proportion to how much
-     image there actually is. */
-  var small = w < 70;
-  var wFeat = small ? 0.35 : 0.70;
-  var wArt  = 1 - wFeat;
-
+  /* Feature matching is the primary signal. Artwork similarity only
+     separates candidates whose geometry is genuinely tied, and can
+     never overturn a strong geometric match. */
   var fN = normalise(featRaw, pool, false);
   var aN = normalise(artRaw,  pool, true);
   var scores={};
   pool.forEach(function(nm){
-    scores[nm] = -(fN[nm]*wFeat + aN[nm]*wArt);
+    var g = detail[nm].geo || 0;
+    /* a confident geometric match stands on its own */
+    var tie = g < 5 ? 0.25 : 0.06;
+    scores[nm] = -(fN[nm]*(1-tie) + aN[nm]*tie);
     detail[nm].combined = -scores[nm];
     detail[nm].art = artRaw[nm];
   });
@@ -688,7 +688,7 @@ function recognise(cx, cy, w, hh){
 
   return { sig:mySig, dmask:dmask, cost:cost, name:ranked[0]||null,
            ranked:ranked.slice(0,8), conf:conf, scores:scores,
-           detail:detail, pool:pool.length, why:"feature" };
+           detail:detail, pool:pool.length, kp:kpCount, why:"feature" };
 }
 
 function loadRefs(cb){
@@ -1251,9 +1251,9 @@ function diagBlock(){
   return '<div class="diag">' + baselineBlock() + featureBlock() + expBlock() + sweepBlock() + pairBlock() + S.taps.map(function(t,i){
     var rows = (t.cands||[]).map(function(nm,j){
       var d = t.detail && t.detail[nm];
-      var v = d ? ('score '+((d.combined||0)*100).toFixed(0)
-                   +' &middot; geo '+d.geo
-                   +' &middot; art '+(d.art>1e8?"-":d.art.toFixed(0)))
+      var v = d ? ('geo '+d.geo+' &middot; good '+d.good
+                   +' &middot; '+(d.quality*100).toFixed(0)+'%'
+                   +' &middot; s'+((d.combined||0)*100).toFixed(0))
                 : "-";
       return '<div><span>'+(j+1)+'. '+esc(nm)+'</span><b>'+v+'</b></div>';
     }).join("") || '<div><span>no candidates</span><b>-</b></div>';
@@ -1261,6 +1261,9 @@ function diagBlock(){
       + ' &middot; cost '+(t.cost===null||t.cost===undefined?"?":t.cost)
       + ' &middot; via '+(t.why||"-")+' &middot; mode '+S.mode
       + ' &middot; library '+(t.pool===undefined?"?":t.pool)
+      + ' &middot; crop '+Math.round(t.w)+'x'+Math.round(t.h)
+      + ' &middot; kp '+(t.kp===undefined?"?":t.kp)
+      + ' &middot; gap '+((t.conf||0)*100).toFixed(0)
       + ' &middot; ref cells '+refCells()
       + '</div>'+rows+'</div>';
   }).join("") + '</div>';
@@ -1285,12 +1288,19 @@ function vScan(){
     var lowest = S.taps.filter(function(t){return t.name;})
                        .reduce(function(a,t){ return Math.min(a, t.conf===undefined?1:t.conf); }, 1);
     var costs = S.taps.map(function(t){ return t.cost || "?"; }).join("  ");
+    var cardPx = S.taps.length ? Math.round(S.taps[0].w) : 0;
+    var thin = cardPx < 70
+      ? '<div class="meta" style="padding:0 16px 6px;color:#E4483F">'
+        + 'cards are only '+cardPx+'px wide in this image. A full resolution '
+        + 'screenshot straight from the phone gives about three times the detail '
+        + 'and will recognise far better.</div>'
+      : "";
     var regionLine = '<div class="meta" style="padding:0 16px 6px">mode '+esc(S.mode)
       + ' &middot; screen cards ' + S.taps.length + ' &middot; library '
       + Object.keys(REF).length + '</div>';
     h += '<div class="eyebrow">Best to worst &middot; tap a name to correct'
       + (lowest < 0.25 ? ' &middot; low confidence' : '') + '</div>'
-      + regionLine
+      + thin + regionLine
       + '<div class="meta" style="padding:0 16px 8px">elixir read: '+esc(costs)+'</div>'
       + diagBlock()
       + '<div class="list">'
@@ -1344,7 +1354,7 @@ function readSlots(){
        and make the next scan worse */
     return { x:cx, y:cy, w:w, h:hh, size:w, sig:r.sig, dmask:r.dmask,
              name:r.name, cands:r.ranked, conf:r.conf, cost:r.cost,
-             scores:r.scores, detail:r.detail, why:r.why, pool:r.pool };
+             scores:r.scores, detail:r.detail, why:r.why, pool:r.pool, kp:r.kp };
   });
   nextUnknown();
 }
