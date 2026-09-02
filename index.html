@@ -861,23 +861,31 @@ function corners(gr, max){
   for(y=R+2;y<FMH-R-2;y++){
     for(x=R+2;x<FMW-R-2;x++){
       var c0=gr[y*FMW+x], s=0;
-      for(i=0;i<offs.length;i++){
-        s += Math.abs(gr[(y+offs[i][1])*FMW + (x+offs[i][0])] - c0);
-      }
+      for(i=0;i<offs.length;i++) s += Math.abs(gr[(y+offs[i][1])*FMW+(x+offs[i][0])] - c0);
       score[y*FMW+x]=s;
     }
   }
-  /* keep local maxima */
+  var cand=[];
   for(y=R+3;y<FMH-R-3;y++){
     for(x=R+3;x<FMW-R-3;x++){
       var v=score[y*FMW+x];
-      if(v < 120) continue;
+      if(v < 200) continue;
       if(v>=score[y*FMW+x-1] && v>=score[y*FMW+x+1] &&
-         v>=score[(y-1)*FMW+x] && v>=score[(y+1)*FMW+x]) pts.push([x,y,v]);
+         v>=score[(y-1)*FMW+x] && v>=score[(y+1)*FMW+x]) cand.push([x,y,v]);
     }
   }
-  pts.sort(function(a,b){ return b[2]-a[2]; });
-  return pts.slice(0, max||220);
+  cand.sort(function(a,b){ return b[2]-a[2]; });
+  /* spread them out, so one busy area cannot supply every point */
+  var taken=[];
+  for(i=0;i<cand.length && taken.length<(max||150);i++){
+    var ok=true;
+    for(var j=0;j<taken.length;j++){
+      var dx=cand[i][0]-taken[j][0], dy=cand[i][1]-taken[j][1];
+      if(dx*dx+dy*dy < 36){ ok=false; break; }
+    }
+    if(ok) taken.push(cand[i]);
+  }
+  return taken;
 }
 
 function brief(gr, pts){
@@ -905,18 +913,34 @@ function featureSet(img, x, y, w, h){
 
 /* Lowe ratio test: a match counts only if it is clearly better than
    the next best, which throws out repetitive texture. */
-function matchCount(A, B){
-  var good=0;
+function matchDetail(A, B){
+  var pairs=[], cands=0;
   for(var i=0;i<A.desc.length;i++){
-    var b1=999, b2=999;
+    var b1=999, b2=999, bj=-1;
     for(var j=0;j<B.desc.length;j++){
       var d=hamm(A.desc[i], B.desc[j]);
-      if(d<b1){ b2=b1; b1=d; } else if(d<b2) b2=d;
+      if(d<b1){ b2=b1; b1=d; bj=j; } else if(d<b2) b2=d;
     }
-    if(b1 < 34 && b1 < b2*0.8) good++;
+    if(b1 < 46) cands++;
+    if(b1 < 34 && b1 < b2*0.8) pairs.push([A.pts[i], B.pts[bj]]);
   }
-  return good;
+
+  /* Geometric check. Both images are letterboxed into the same box,
+     so matching points on the same object should share a similar
+     offset. Random matches scatter; real ones cluster. */
+  var bins={}, bestBin=0;
+  pairs.forEach(function(p){
+    var dx=Math.round((p[0][0]-p[1][0])/14), dy=Math.round((p[0][1]-p[1][1])/14);
+    var k=dx+","+dy;
+    bins[k]=(bins[k]||0)+1;
+    if(bins[k]>bestBin) bestBin=bins[k];
+  });
+
+  return { good:pairs.length, geo:bestBin,
+           cands:cands, quality: cands ? pairs.length/cands : 0 };
 }
+
+function matchCount(A,B){ return matchDetail(A,B).geo; }
 
 var FEAT = {};
 function refFeat(name){
@@ -930,29 +954,30 @@ function refFeat(name){
 function featureBlock(){
   if(!S.img || !S.taps.length || !Object.keys(REFIMG).length) return "";
   var tests = ["Rocket","Golem","Heal Spirit"];
-  var foils = ["Tombstone","Graveyard","Ice Wizard","Prince","Lava Hound"];
+  var foils = ["Tombstone","Graveyard","Ice Wizard","Prince","Lava Hound","Dart Goblin"];
   var rows="";
+
   tests.forEach(function(want,i){
     var t=S.taps[i];
-    if(!t) return;
+    if(!t || !REFIMG[want]) return;
     var A=featureSet(S.img, t.x-t.w/2, t.y-t.h/2, t.w, t.h);
-    var rf=refFeat(want);
-    if(!rf) return;
-    var mine=matchCount(A, rf);
-    var best=0, bestN="-";
-    foils.forEach(function(f){
-      if(f===want) return;
-      var rff=refFeat(f);
-      if(!rff) return;
-      var m=matchCount(A, rff);
-      if(m>best){ best=m; bestN=f; }
+    var list=[want].concat(foils.filter(function(f){ return f!==want; })).slice(0,5);
+    rows += '<div class="diagH" style="margin-top:8px">'+esc(want)
+      + ' &middot; kp '+A.pts.length+'</div>'
+      + '<div><span style="color:var(--low)">card</span>'
+      + '<b style="color:var(--low)">good / geo / quality</b></div>';
+    list.forEach(function(nm){
+      var rf=refFeat(nm);
+      if(!rf) return;
+      var m=matchDetail(A, rf);
+      var hit = (nm===want);
+      rows += '<div><span'+(hit?' style="color:#7CE38B"':'')+'>'+esc(nm)+'</span>'
+        + '<b>'+m.good+' / '+m.geo+' / '+(m.quality*100).toFixed(0)+'%</b></div>';
     });
-    rows += '<div><span>'+esc(want)+' &middot; kp '+A.pts.length+'/'+rf.pts.length+'</span>'
-      + '<b style="color:'+(mine>best?"#7CE38B":"var(--mid)")+'">'
-      + mine+' vs '+best+' ('+esc(bestN)+')</b></div>';
   });
+
   return '<div class="diagCol"><div class="diagH">feature matching &middot; '
-    + 'consistent matches, higher is better</div>'+rows+'</div>';
+    + 'good matches, geometrically consistent, match quality</div>'+rows+'</div>';
 }
 
 /* ── view experiment ────────────────────────────────────────────
