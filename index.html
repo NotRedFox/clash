@@ -800,6 +800,139 @@ function globalAssign(){
              totalLocal:totalLocal, totalGlobal:totalGlobal };
 }
 
+
+/* ── colour signatures ──────────────────────────────────────────
+   Six independent descriptions of a card, each capturing something
+   the others miss. Deterministic, no model, no downloads. */
+var SG_W=6, SG_H=8;        /* spatial palette grid  */
+var BR_W=8, BR_H=10;       /* brightness and edges  */
+var HUE_BINS=12, SAT_BINS=3, VAL_BINS=3;
+
+function rgb2hsv(r,g,b){
+  r/=255; g/=255; b/=255;
+  var mx=Math.max(r,g,b), mn=Math.min(r,g,b), d=mx-mn, h=0;
+  if(d>0){
+    if(mx===r) h=((g-b)/d+6)%6;
+    else if(mx===g) h=(b-r)/d+2;
+    else h=(r-g)/d+4;
+    h/=6;
+  }
+  return [h, mx>0?d/mx:0, mx];
+}
+
+function signature(img, x, y, w, h){
+  /* sample the artwork band, letterboxed so shape is preserved */
+  var SW=48, SH=64;
+  var c=document.createElement("canvas"); c.width=SW; c.height=SH;
+  var g=c.getContext("2d",{willReadFrequently:true});
+  g.fillStyle="#000"; g.fillRect(0,0,SW,SH);
+  var ax=x+w*ART_X0, ay=y+h*ART_Y0;
+  var aw=w*(ART_X1-ART_X0), ah=h*(ART_Y1-ART_Y0);
+  var s=Math.min(SW/aw, SH/ah), dw=aw*s, dh=ah*s;
+  g.drawImage(img, ax, ay, aw, ah, (SW-dw)/2, (SH-dh)/2, dw, dh);
+  var d=g.getImageData(0,0,SW,SH).data;
+
+  var palette=new Float32Array(HUE_BINS+2);
+  var hist=new Float32Array(HUE_BINS*SAT_BINS*VAL_BINS);
+  var spat=new Float32Array(SG_W*SG_H*4);
+  var bright=new Float32Array(BR_W*BR_H);
+  var lum=new Float32Array(SW*SH);
+  var cellN=new Float32Array(SG_W*SG_H);
+  var brN=new Float32Array(BR_W*BR_H);
+
+  for(var py=0;py<SH;py++){
+    for(var px=0;px<SW;px++){
+      var i=py*SW+px, o=i*4;
+      var hsv=rgb2hsv(d[o],d[o+1],d[o+2]);
+      var H=hsv[0], Sa=hsv[1], V=hsv[2];
+      lum[i]=V*255;
+
+      /* palette: hue bins weighted by how colourful the pixel is,
+         plus separate bins for near-grey light and dark */
+      if(Sa<0.18){ palette[HUE_BINS + (V>0.5?0:1)] += 1; }
+      else palette[Math.min(HUE_BINS-1, Math.floor(H*HUE_BINS))] += Sa;
+
+      var hb=Math.min(HUE_BINS-1, Math.floor(H*HUE_BINS));
+      var sb=Math.min(SAT_BINS-1, Math.floor(Sa*SAT_BINS));
+      var vb=Math.min(VAL_BINS-1, Math.floor(V*VAL_BINS));
+      hist[(hb*SAT_BINS+sb)*VAL_BINS+vb] += 1;
+
+      var gx=Math.min(SG_W-1, Math.floor(px/SW*SG_W));
+      var gy=Math.min(SG_H-1, Math.floor(py/SH*SG_H));
+      var gi=(gy*SG_W+gx)*4;
+      /* hue as a vector, so 0 and 1 are not opposite ends */
+      spat[gi]   += Math.cos(H*2*Math.PI)*Sa;
+      spat[gi+1] += Math.sin(H*2*Math.PI)*Sa;
+      spat[gi+2] += Sa;
+      spat[gi+3] += V;
+      cellN[gy*SG_W+gx] += 1;
+
+      var bx=Math.min(BR_W-1, Math.floor(px/SW*BR_W));
+      var by=Math.min(BR_H-1, Math.floor(py/SH*BR_H));
+      bright[by*BR_W+bx] += V;
+      brN[by*BR_W+bx] += 1;
+    }
+  }
+
+  function norm(a){
+    var t=0, i;
+    for(i=0;i<a.length;i++) t+=a[i];
+    if(t>0) for(i=0;i<a.length;i++) a[i]/=t;
+    return a;
+  }
+  norm(palette); norm(hist);
+  for(var k=0;k<SG_W*SG_H;k++){
+    var n=cellN[k]||1;
+    spat[k*4]/=n; spat[k*4+1]/=n; spat[k*4+2]/=n; spat[k*4+3]/=n;
+  }
+  for(k=0;k<BR_W*BR_H;k++) bright[k]/= (brN[k]||1);
+  /* remove overall exposure so lighting differences do not dominate */
+  var bm=0; for(k=0;k<bright.length;k++) bm+=bright[k];
+  bm/=bright.length;
+  for(k=0;k<bright.length;k++) bright[k]-=bm;
+
+  var edge=new Float32Array(BR_W*BR_H);
+  for(var ey=0;ey<SH;ey++){
+    for(var ex=0;ex<SW;ex++){
+      var i2=ey*SW+ex;
+      var gx2=(ex<SW-1?lum[i2+1]:lum[i2])-lum[i2];
+      var gy2=(ey<SH-1?lum[i2+SW]:lum[i2])-lum[i2];
+      var bx2=Math.min(BR_W-1, Math.floor(ex/SW*BR_W));
+      var by2=Math.min(BR_H-1, Math.floor(ey/SH*BR_H));
+      edge[by2*BR_W+bx2] += Math.sqrt(gx2*gx2+gy2*gy2);
+    }
+  }
+  var em=0; for(k=0;k<edge.length;k++) em+=edge[k];
+  em=(em/edge.length)||1;
+  for(k=0;k<edge.length;k++) edge[k]/=em;
+
+  return { palette:palette, hist:hist, spat:spat, bright:bright, edge:edge };
+}
+
+function chi2(a,b){
+  var s=0;
+  for(var i=0;i<a.length;i++){
+    var d=a[i]-b[i], t=a[i]+b[i];
+    if(t>0) s += d*d/t;
+  }
+  return s;
+}
+function l2(a,b){
+  var s=0;
+  for(var i=0;i<a.length;i++){ var d=a[i]-b[i]; s+=d*d; }
+  return Math.sqrt(s/a.length);
+}
+
+function sigScores(A, B){
+  return {
+    palette: chi2(A.palette, B.palette),
+    hist:    chi2(A.hist, B.hist),
+    spatial: l2(A.spat, B.spat),
+    bright:  l2(A.bright, B.bright),
+    edge:    l2(A.edge, B.edge)
+  };
+}
+
 /* ── one recognition path ──────────────────────────────────────── */
 function recognise(cx, cy, w, hh){
   function crop(kx, ky){
@@ -855,45 +988,40 @@ function recognise(cx, cy, w, hh){
     artRaw[nm]  = REF[nm] ? artworkScore(S.img, cx-w/2, cy-hh/2, w, hh, REF[nm]) : 1e9;
   });
 
-  /* Small cards go to template registration, which uses every pixel
-     rather than a handful of keypoints. Full size cards stay on
-     feature matching, which is accurate for them. */
-  var tiny = w < 70;
-  if(tiny){
-    var tplRaw = templateRank(S.img, cx-w/2, cy-hh/2, w, hh, pool);
-    var tN = normalise(tplRaw, pool, true);
-    var fN2 = normalise(featRaw, pool, false);
-    var sc={};
-    pool.forEach(function(nm){
-      sc[nm] = -(tN[nm]*0.75 + fN2[nm]*0.25);
-      detail[nm].combined = -sc[nm];
-      detail[nm].art = tplRaw[nm];
-    });
-    var rankedT = pool.slice().sort(function(a,b){ return sc[a]-sc[b]; });
-    var cT = 0;
-    if(rankedT[0] && rankedT[1]){
-      cT = Math.max(0, Math.min(1,
-        (detail[rankedT[0]].combined - detail[rankedT[1]].combined) * 5));
+  /* Every signal scored independently, normalised across the
+     candidate set, then blended. No single signal can decide alone. */
+  var mySig = signature(S.img, cx-w/2, cy-hh/2, w, hh);
+  var raw = { palette:{}, hist:{}, spatial:{}, bright:{}, edge:{} };
+  pool.forEach(function(nm){
+    if(!REF[nm] || !REF[nm].sig){
+      Object.keys(raw).forEach(function(k){ raw[k][nm] = 1e9; });
+      return;
     }
-    return { sig:mySig, dmask:dmask, cost:cost, name:rankedT[0]||null,
-             ranked:rankedT.slice(0,8), ranked20:rankedT.slice(0,20),
-             conf:cT, scores:sc, detail:detail,
-             pool:pool.length, kp:kpCount, why:"template" };
-  }
+    var s = sigScores(mySig, REF[nm].sig);
+    Object.keys(raw).forEach(function(k){ raw[k][nm] = s[k]; });
+  });
 
-  /* Feature matching is the primary signal. Artwork similarity only
-     separates candidates whose geometry is genuinely tied, and can
-     never overturn a strong geometric match. */
+  var N = {};
+  Object.keys(raw).forEach(function(k){ N[k] = normalise(raw[k], pool, true); });
   var fN = normalise(featRaw, pool, false);
-  var aN = normalise(artRaw,  pool, true);
+
+  var WEIGHTS = { spatial:0.30, palette:0.20, hist:0.15,
+                  bright:0.10, edge:0.10, feature:0.15 };
+
   var scores={};
   pool.forEach(function(nm){
-    var g = detail[nm].geo || 0;
-    /* a confident geometric match stands on its own */
-    var tie = g < 5 ? 0.25 : 0.06;
-    scores[nm] = -(fN[nm]*(1-tie) + aN[nm]*tie);
-    detail[nm].combined = -scores[nm];
-    detail[nm].art = artRaw[nm];
+    var v = N.spatial[nm]*WEIGHTS.spatial
+          + N.palette[nm]*WEIGHTS.palette
+          + N.hist[nm]*WEIGHTS.hist
+          + N.bright[nm]*WEIGHTS.bright
+          + N.edge[nm]*WEIGHTS.edge
+          + fN[nm]*WEIGHTS.feature;
+    scores[nm] = -v;
+    detail[nm].combined = v;
+    detail[nm].parts = {
+      spatial:N.spatial[nm], palette:N.palette[nm], hist:N.hist[nm],
+      bright:N.bright[nm], edge:N.edge[nm], feature:fN[nm]
+    };
   });
 
   var ranked = pool.slice().sort(function(a,b){
@@ -957,6 +1085,7 @@ function loadRefs(cb){
           REF[name] = refSig(img);
           REF[name].views = refViews(img);
           REF[name].tpl = refTemplates(img);
+          REF[name].sig = signature(img, 0, 0, img.naturalWidth, img.naturalHeight);
           REF[name].w = img.naturalWidth;
           REF[name].h = img.naturalHeight;
         }
@@ -1000,7 +1129,7 @@ var COST = {
 };
 
 var S = { tab:"scan", deck:[], offer:[], open:null, q:"",
-          img:null, taps:[], pending:null, diag:false, mode:"triple", unique:true, recog:"auto", lib:loadLib(), lq:"" };
+          img:null, taps:[], pending:null, diag:false, mode:"triple", unique:true, lib:loadLib(), lq:"" };
 
 function toggle(a,n,max){ var i=a.indexOf(n); if(i!==-1) a.splice(i,1); else if(a.length<max) a.push(n); }
 
@@ -1288,327 +1417,43 @@ function refFeat(name){
 
 
 
-/* ── visual embeddings ──────────────────────────────────────────
-   A pretrained vision model turns each image into a vector that
-   captures what the picture is of, rather than which local textures
-   it contains. Cards are then ranked by cosine similarity against
-   the same 74 references. No labelling and no training.
 
-   The model is fetched from a CDN on first use, so this path is
-   opt-in: everything else in the app works offline. */
-var EMB = {
-  ready:false, loading:false, err:null, pipe:null,
-  refs:{}, done:0, total:0, RawImage:null, mode:"auto"
-};
-var EMB_KEY = "chaosEmbRefs_v2";
-
-/* Reference vectors go to IndexedDB: 74 x 512 floats is too large
-   for localStorage but trivial for IDB, so the second run skips
-   embedding the references entirely. */
-function idb(){
-  return new Promise(function(res, rej){
-    var r = indexedDB.open("chaosDraft", 1);
-    r.onupgradeneeded = function(){ r.result.createObjectStore("kv"); };
-    r.onsuccess = function(){ res(r.result); };
-    r.onerror = function(){ rej(r.error); };
-  });
-}
-async function idbGet(k){
-  try{
-    var db = await idb();
-    return await new Promise(function(res){
-      var t = db.transaction("kv").objectStore("kv").get(k);
-      t.onsuccess = function(){ res(t.result); };
-      t.onerror = function(){ res(null); };
-    });
-  }catch(e){ return null; }
-}
-async function idbSet(k, v){
-  try{
-    var db = await idb();
-    db.transaction("kv","readwrite").objectStore("kv").put(v, k);
-  }catch(e){}
-}
-
-function embStatus(){
-  if(EMB.err) return "error: " + EMB.err;
-  if(EMB.loading) return "loading " + EMB.done + "/" + EMB.total;
-  if(EMB.ready) return "ready, " + Object.keys(EMB.refs).length + " references";
-  return "off";
-}
-
-async function embInit(){
-  if(EMB.ready || EMB.loading) return;
-  EMB.loading = true; EMB.err = null; EMB.done = 0; EMB.total = 0;
-  render();
-  try{
-    var mod = await import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2");
-    EMB.RawImage = mod.RawImage;
-    EMB.pipe = await mod.pipeline("image-feature-extraction",
-                                  "Xenova/clip-vit-base-patch32",
-                                  { quantized:true });
-    var cached = await idbGet(EMB_KEY);
-    var names = Object.keys(REFIMG);
-    if(cached && Object.keys(cached).length >= names.length){
-      EMB.refs = cached;
-      EMB.ready = true; EMB.loading = false;
-      render();
-      return;
-    }
-    EMB.total = names.length;
-    for(var i=0;i<names.length;i++){
-      var nm = names[i];
-      EMB.refs[nm] = await embedImage(REFIMG[nm], 0, 0,
-                                      REFIMG[nm].naturalWidth, REFIMG[nm].naturalHeight);
-      EMB.done++;
-      if(EMB.done % 8 === 0) render();
-    }
-    await idbSet(EMB_KEY, EMB.refs);
-    EMB.ready = true;
-  } catch(e){
-    EMB.err = (e && e.message) ? e.message : String(e);
+function sigSelfTest(){
+  if(!Object.keys(REF).length) return "";
+  var names = Object.keys(REF).filter(function(n){ return REF[n].sig; });
+  var probe = ["Giant","Dark Prince","Wizard","Hunter","Princess",
+               "Tesla","Ice Spirit","Electro Spirit"];
+  function combined(a,b){
+    var s=sigScores(a,b);
+    return s.spatial*0.30 + s.palette*0.20 + s.hist*0.15
+         + s.bright*0.10 + s.edge*0.10;
   }
-  EMB.loading = false;
-  render();
-}
-
-/* Crops are enlarged before embedding: the model expects 224px, and
-   feeding it a 39px image would waste most of its input. */
-async function embedImage(img, x, y, w, h){
-  var c = document.createElement("canvas");
-  c.width = 224; c.height = 224;
-  var g = c.getContext("2d");
-  g.fillStyle = "#000"; g.fillRect(0,0,224,224);
-  var s = Math.min(224/w, 224/h), dw = w*s, dh = h*s;
-  g.imageSmoothingQuality = "high";
-  g.drawImage(img, x, y, w, h, (224-dw)/2, (224-dh)/2, dw, dh);
-  var raw = await EMB.RawImage.fromURL(c.toDataURL());
-  var out = await EMB.pipe(raw, { pooling:"mean", normalize:true });
-  var v = Array.from(out.data);
-  /* Do not trust the pipeline to have normalised. Unnormalised
-     vectors made a dot product favour whichever card had the largest
-     magnitude, which is why a handful of cards won every slot. */
-  var n = 0;
-  for(var i=0;i<v.length;i++) n += v[i]*v[i];
-  n = Math.sqrt(n) || 1;
-  for(i=0;i<v.length;i++) v[i] /= n;
-  v.rawNorm = n;
-  return v;
-}
-
-/* Real cosine: dot over the product of norms. With unit vectors this
-   is the dot product, but it is computed properly so a normalisation
-   slip cannot masquerade as similarity again. */
-function cosine(a,b){
-  var d=0, na=0, nb=0;
-  for(var i=0;i<a.length;i++){ d += a[i]*b[i]; na += a[i]*a[i]; nb += b[i]*b[i]; }
-  var den = Math.sqrt(na)*Math.sqrt(nb);
-  return den ? d/den : 0;
-}
-
-async function embScan(){
-  if(!EMB.ready || !S.img || !S.taps.length) return;
-  for(var i=0;i<S.taps.length;i++){
-    var t = S.taps[i];
-    var v = await embedImage(S.img, t.x-t.w/2, t.y-t.h/2, t.w, t.h);
-    var scored = Object.keys(EMB.refs).map(function(nm){
-      return { nm:nm, s:cosine(v, EMB.refs[nm]) };
-    }).sort(function(a,b){ return b.s-a.s; });
-    t.emb = scored.slice(0,5);
-    t.featureName = t.featureName || t.name;
-    if(S.recog !== "feature" && scored.length) t.name = scored[0].nm;
-    if(i % 6 === 0) render();
-  }
-  render();
-}
-
-
-
-/* ── crop domain test ───────────────────────────────────────────
-   Two questions. Does a wider crop help, and does degrading the
-   references to match the screenshot's condition help. Diagnostic
-   only: nothing here feeds the card selection. */
-var VT = { running:false, rows:[], degraded:null, done:0, total:0 };
-var DEG_KEY = "chaosEmbDegraded_v1";
-
-/* A reference put through what the screenshot went through: shrunk to
-   the size a mega tile actually occupies, then blown back up. */
-async function embedDegraded(img, tw, th){
-  var s = document.createElement("canvas");
-  s.width = tw; s.height = th;
-  var sg = s.getContext("2d");
-  sg.drawImage(img, 0, 0, img.naturalWidth, img.naturalHeight, 0, 0, tw, th);
-  return await embedImage(s, 0, 0, tw, th);
-}
-
-async function buildDegraded(tw, th){
-  var cached = await idbGet(DEG_KEY);
-  var names = Object.keys(REFIMG);
-  if(cached && Object.keys(cached).length >= names.length){
-    VT.degraded = cached; return;
-  }
-  VT.degraded = {};
-  VT.total = names.length; VT.done = 0;
-  for(var i=0;i<names.length;i++){
-    VT.degraded[names[i]] = await embedDegraded(REFIMG[names[i]], tw, th);
-    VT.done++;
-    if(VT.done % 10 === 0) render();
-  }
-  await idbSet(DEG_KEY, VT.degraded);
-}
-
-function topN(vec, bank, n){
-  return Object.keys(bank).map(function(nm){
-    return { nm:nm, s:cosine(vec, bank[nm]) };
-  }).sort(function(a,b){ return b.s-a.s; }).slice(0, n||5);
-}
-
-async function runVariantTest(){
-  if(!EMB.ready || !S.img || !S.taps.length || VT.running) return;
-  VT.running = true; VT.rows = []; render();
-
-  var t0 = S.taps[0];
-  await buildDegraded(Math.round(t0.w), Math.round(t0.h));
-
-  var slots = S.taps.slice(0, 6);
-  for(var i=0;i<slots.length;i++){
-    var t = slots[i];
-    var out = { slot:i+1, variants:[] };
-    var scales = [["A current",1.0],["B +50%",1.5],["C +100%",2.0]];
-    for(var k=0;k<scales.length;k++){
-      var f = scales[k][1];
-      var w = t.w*f, h = t.h*f;
-      var v = await embedImage(S.img, t.x-w/2, t.y-h/2, w, h);
-      out.variants.push({
-        name: scales[k][0],
-        px: Math.round(w)+"x"+Math.round(h),
-        clean: topN(v, EMB.refs, 5),
-        deg:   VT.degraded ? topN(v, VT.degraded, 5) : []
-      });
-    }
-    VT.rows.push(out);
-    render();
-  }
-  VT.running = false; render();
-}
-
-function variantBlock(){
-  if(!EMB.ready) return "";
-  var head = '<div class="diagCol"><div class="diagH">crop domain test &middot; '
-    + 'A current, B +50%, C +100% &middot; clean vs degraded references'
-    + (VT.total && VT.done < VT.total ? ' &middot; degrading '+VT.done+'/'+VT.total : '')
-    + '</div>'
-    + '<div><span>run</span><b><button data-vt="1" '
-    + 'style="color:var(--acc);text-decoration:underline;padding:0">'
-    + (VT.running ? "running..." : "start test") + '</button></b></div>';
-
-  var body = VT.rows.map(function(r){
-    return '<div class="diagH" style="margin-top:8px">slot '+r.slot+'</div>'
-      + r.variants.map(function(v){
-          function fmt(list){
-            return list.map(function(e){ return esc(e.nm)+' '+e.s.toFixed(3); }).join(', ');
-          }
-          return '<div><span>'+v.name+' &middot; '+v.px+'</span><b>'
-            + 'clean: '+fmt(v.clean)+'<br>degraded: '+fmt(v.deg)+'</b></div>';
-        }).join("");
-  }).join("");
-
-  return head + body + '</div>';
-}
-
-/* ── embedding self-test ────────────────────────────────────────
-   Prove the pipeline can tell references apart before trusting it on
-   screenshots. An image against itself must score 1.000. */
-function pixelHash(img){
-  var c=document.createElement("canvas"); c.width=32; c.height=32;
-  var g=c.getContext("2d",{willReadFrequently:true});
-  g.drawImage(img,0,0,32,32);
-  var d=g.getImageData(0,0,32,32).data, h=2166136261;
-  for(var i=0;i<d.length;i+=4){
-    h ^= d[i]; h = Math.imul(h,16777619);
-    h ^= d[i+1]; h = Math.imul(h,16777619);
-    h ^= d[i+2]; h = Math.imul(h,16777619);
-  }
-  return (h>>>0).toString(16);
-}
-
-function embSelfTest(){
-  if(!EMB.ready) return "";
-  var probe = ["Rocket","Golem","Ice Spirit","Heal Spirit","Giant",
-               "Dark Prince","Wizard","Hunter","Princess","Tesla"];
-  var rows = "";
-
-  probe.forEach(function(nm){
-    var v = EMB.refs[nm];
-    if(!v){ rows += '<div><span>'+esc(nm)+'</span><b>missing</b></div>'; return; }
-    var mn=Infinity, mx=-Infinity, bad=0, n=0;
-    for(var i=0;i<v.length;i++){
-      if(!isFinite(v[i])) bad++;
-      if(v[i]<mn) mn=v[i];
-      if(v[i]>mx) mx=v[i];
-      n += v[i]*v[i];
-    }
-    rows += '<div><span>'+esc(nm)+' &middot; '+(REFIMG[nm]?pixelHash(REFIMG[nm]):"?")+'</span>'
-      + '<b>d'+v.length+' &middot; |v| '+Math.sqrt(n).toFixed(3)
-      + ' &middot; raw '+(v.rawNorm?v.rawNorm.toFixed(1):"?")
-      + ' &middot; ['+mn.toFixed(3)+','+mx.toFixed(3)+']'
-      + (bad?' &middot; BAD '+bad:'')+'</b></div>';
-  });
-
-  var pairs = [["Giant","Giant"],["Giant","Dark Prince"],["Giant","Wizard"],
-               ["Dark Prince","Dark Prince"],["Wizard","Wizard"],
-               ["Wizard","Hunter"],["Ice Spirit","Ice Spirit"],
-               ["Ice Spirit","Skeletons"]];
-  var prow = pairs.map(function(p){
-    var a=EMB.refs[p[0]], b=EMB.refs[p[1]];
-    var v = (a&&b) ? cosine(a,b) : NaN;
-    var self = p[0]===p[1];
-    var okCol = self ? (v>0.999?"#7CE38B":"#E4483F") : "var(--mid)";
-    return '<div><span>'+esc(p[0])+' vs '+esc(p[1])+'</span>'
-      + '<b style="color:'+okCol+'">'+(isNaN(v)?"-":v.toFixed(4))+'</b></div>';
-  }).join("");
-
-  var probe2 = probe.map(function(nm){
-    var v=EMB.refs[nm];
-    if(!v) return "";
-    var best=null, bs=-2;
-    Object.keys(EMB.refs).forEach(function(o){
+  var wrong=0;
+  names.forEach(function(nm){
+    var self=combined(REF[nm].sig, REF[nm].sig), bestOther=Infinity;
+    names.forEach(function(o){
       if(o===nm) return;
-      var s=cosine(v, EMB.refs[o]);
-      if(s>bs){ bs=s; best=o; }
+      var v=combined(REF[nm].sig, REF[o].sig);
+      if(v<bestOther) bestOther=v;
     });
-    return '<div><span>'+esc(nm)+' nearest other</span><b>'
-      + esc(best||"-")+' '+bs.toFixed(4)+'</b></div>';
+    if(self >= bestOther) wrong++;
+  });
+
+  var rows = probe.map(function(nm){
+    if(!REF[nm]) return "";
+    var list = names.filter(function(o){ return o!==nm; }).map(function(o){
+      return { nm:o, v:combined(REF[nm].sig, REF[o].sig) };
+    }).sort(function(a,b){ return a.v-b.v; }).slice(0,5);
+    return '<div><span>'+esc(nm)+'</span><b>'
+      + list.map(function(e){ return esc(e.nm)+' '+e.v.toFixed(3); }).join(' &middot; ')
+      + '</b></div>';
   }).join("");
 
-  return '<div class="diagCol"><div class="diagH">embedding self test &middot; '
-    + 'model Xenova/clip-vit-base-patch32 &middot; image encoder &middot; input 224x224'
-    + '</div>' + rows
-    + '<div class="diagH" style="margin-top:8px">pairwise cosine &middot; '
-    + 'self must be 1.0000</div>' + prow
-    + '<div class="diagH" style="margin-top:8px">nearest other reference</div>'
-    + probe2 + '</div>';
-}
-
-function embBlock(){
-  if(!S.img || !S.taps.length) return "";
-  var rows = S.taps.map(function(t,i){
-    if(!t.emb) return "";
-    var best = t.emb[0];
-    var agree = best && best.nm === t.name;
-    return '<div><span'+(agree?'':' style="color:#E4483F"')+'>slot '+(i+1)
-      + ' &middot; feature ' + esc(t.name||"-") + '</span>'
-      + '<b>' + t.emb.map(function(e){
-          return esc(e.nm)+' cos '+e.s.toFixed(4);
-        }).join(' &middot; ') + '</b></div>';
-  }).join("");
-  return '<div class="diagCol"><div class="diagH">embeddings &middot; '
-    + embStatus() + ' &middot; top five per slot, red where it disagrees '
-    + 'with the feature matcher</div>'
-    + '<div><span>model</span><b><button data-emb="1" '
-    + 'style="color:var(--acc);text-decoration:underline;padding:0">'
-    + (EMB.ready ? "rescan" : "load model (about 90MB)") + '</button></b></div>'
-    + rows + '</div>';
+  return '<div class="diagCol"><div class="diagH">reference self test &middot; '
+    + names.length+' references &middot; '
+    + (wrong ? '<span style="color:#E4483F">'+wrong+' fail self match</span>'
+             : '<span style="color:#7CE38B">all match themselves best</span>')
+    + ' &middot; nearest five others, lower is closer</div>'+rows+'</div>';
 }
 
 /* ── crop against candidates ────────────────────────────────────
@@ -1973,12 +1818,18 @@ function pairBlock(){
 }
 
 function diagBlock(){
-  return '<div class="diag">' + variantBlock() + embSelfTest() + embBlock() + compareBlock() + kpBlock() + boxOverlay() + rawCrops() + cropScaleTest() + baselineBlock() + resTest() + featureBlock() + expBlock() + sweepBlock() + pairBlock() + S.taps.map(function(t,i){
+  return '<div class="diag">' + sigSelfTest() + compareBlock() + kpBlock() + boxOverlay() + rawCrops() + cropScaleTest() + baselineBlock() + resTest() + featureBlock() + expBlock() + sweepBlock() + pairBlock() + S.taps.map(function(t,i){
     var rows = (t.cands||[]).map(function(nm,j){
       var d = t.detail && t.detail[nm];
-      var v = d ? ('geo '+d.geo+' &middot; good '+d.good
-                   +' &middot; '+(d.quality*100).toFixed(0)+'%'
-                   +' &middot; s'+((d.combined||0)*100).toFixed(0))
+      var p = d && d.parts;
+      var v = d ? ('s'+((d.combined||0)*100).toFixed(0)
+                   + (p ? ' &middot; spat '+(p.spatial*100).toFixed(0)
+                        + ' pal '+(p.palette*100).toFixed(0)
+                        + ' hist '+(p.hist*100).toFixed(0)
+                        + ' bri '+(p.bright*100).toFixed(0)
+                        + ' edge '+(p.edge*100).toFixed(0)
+                        + ' feat '+(p.feature*100).toFixed(0) : '')
+                   + ' &middot; geo '+d.geo)
                 : "-";
       return '<div><span>'+(j+1)+'. '+esc(nm)+'</span><b>'+v+'</b></div>';
     }).join("") || '<div><span>no candidates</span><b>-</b></div>';
@@ -2033,19 +1884,6 @@ function vScan(){
       + ' &middot; scale ' + (dispW ? (S.img.naturalWidth/dispW).toFixed(2) : "?")
       + (t0 ? ' &middot; slot crop original ' + Math.round(t0.w) + ' x ' + Math.round(t0.h) : "")
       + '</div>';
-    var recogLine = '<div class="meta" style="padding:0 16px 6px">'
-      + 'recognition: '
-      + (EMB.err
-          ? '<span style="color:#E4483F">embedding unavailable, using fallback matcher</span>'
-          : EMB.loading ? 'loading embedding model ' + EMB.done + '/' + EMB.total
-          : EMB.ready ? '<span style="color:#7CE38B">embeddings</span>'
-          : 'feature matcher')
-      + ' &middot; '
-      + ["auto","feature","both"].map(function(k){
-          return '<button data-recog="'+k+'" style="padding:0 6px;color:'
-            + (S.recog===k?"var(--acc)":"var(--low)")+'">'+k+'</button>';
-        }).join("")
-      + '</div>';
     var uniqLine = (S.taps.length > 6)
       ? '<div class="meta" style="padding:0 16px 6px">'
         + '<button data-uniq="1" style="color:'+(S.unique?"var(--acc)":"var(--low)")
@@ -2074,7 +1912,7 @@ function vScan(){
           ? ((S.taps[bestSlot].conf||0)*100).toFixed(0) : "-") + '</div>'
     h += '<div class="eyebrow">Best to worst &middot; tap a name to correct'
       + (lowest < 0.25 ? ' &middot; low confidence' : '') + '</div>'
-      + thin + recogLine + uniqLine + regionLine
+      + thin + uniqLine + regionLine
       + '<div class="meta" style="padding:0 16px 8px">elixir read: '+esc(costs)+'</div>'
       + diagBlock()
       + '<div class="list">'
@@ -2132,10 +1970,6 @@ function readSlots(){
   });
   globalAssign();
   nextUnknown();
-  if(S.recog !== "feature"){
-    if(EMB.ready) embScan();
-    else if(!EMB.loading && !EMB.err) embInit().then(embScan);
-  }
 }
 /* Only set by tapping a result to correct it. */
 function nextUnknown(){
@@ -2241,17 +2075,6 @@ document.getElementById("view").addEventListener("click",function(e){
     if(S.lib[n].length>6) S.lib[n].shift();
     saveLib(S.lib);
     t.name=n; nextUnknown(); render(); return; }
-  var rg = e.target.closest("[data-recog]");
-  if(rg){
-    S.recog = rg.dataset.recog;
-    if(S.img) readSlots();
-    render(); return;
-  }
-  if(e.target.closest("[data-vt]")){ runVariantTest(); render(); return; }
-  if(e.target.closest("[data-emb]")){
-    if(EMB.ready) embScan(); else embInit().then(embScan);
-    render(); return;
-  }
   if(e.target.closest("[data-uniq]")){
     S.unique=!S.unique; if(S.img) readSlots(); render(); return;
   }
