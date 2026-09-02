@@ -304,7 +304,7 @@ var ART = [
 ];
 
 var REF = {};              /* card -> hash, built from card art */
-var REF_KEY = "chaosRefHashes_v13";
+var REF_KEY = "chaosRefHashes_v14";
 var refState = { done:0, total:0, failed:0, running:false };
 
 /* Same fingerprint as the screenshot crop: the centre square of
@@ -440,54 +440,6 @@ var COST = {
 "Lava Hound":5,"Valkyrie":4,"Giant Snowball":2,"Rage":2,"Bomber":2,"Mini P.E.K.K.A":4,
 "Prince":5,"Hog Rider":4,"Fire Spirit":1,"Miner":3,"Skeletons":1,"Goblins":2
 };
-
-/* The cost sits in the elixir drop at the bottom of the card: a white
-   digit on magenta. Reduce that patch to a small black and white mask
-   and compare it against digits drawn on a canvas. */
-var DW = 12, DH = 16;
-var DIGITS = null;
-function digitMasks(){
-  if (DIGITS) return DIGITS;
-  DIGITS = {};
-  for (var d=1; d<=9; d++){
-    var c=document.createElement("canvas"); c.width=DW; c.height=DH;
-    var g=c.getContext("2d",{willReadFrequently:true});
-    g.fillStyle="#000"; g.fillRect(0,0,DW,DH);
-    g.fillStyle="#fff";
-    g.font="bold "+DH+"px Arial, sans-serif";
-    g.textAlign="center"; g.textBaseline="middle";
-    g.fillText(String(d), DW/2, DH/2+1);
-    var p=g.getImageData(0,0,DW,DH).data, m=[];
-    for(var i=0;i<DW*DH;i++) m.push(p[i*4] > 128 ? 1 : 0);
-    DIGITS[d]=m;
-  }
-  return DIGITS;
-}
-function readCost(img, cx, cy, w, h){
-  /* elixir drop: centred horizontally, near the bottom of the card */
-  var pw = w*0.30, ph = h*0.17;
-  var px = cx - pw/2, py = cy + h*0.5 - ph*1.15;
-  var c=document.createElement("canvas"); c.width=DW; c.height=DH;
-  var g=c.getContext("2d",{willReadFrequently:true});
-  g.drawImage(img, px, py, pw, ph, 0, 0, DW, DH);
-  var p=g.getImageData(0,0,DW,DH).data, m=[], on=0;
-  for(var i=0;i<DW*DH;i++){
-    var r=p[i*4], gg=p[i*4+1], b=p[i*4+2];
-    /* the digit is white, the drop around it is saturated magenta */
-    var white = r>170 && gg>150 && b>170;
-    m.push(white?1:0); if(white) on++;
-  }
-  if (on < 8 || on > DW*DH*0.6) return null;      /* nothing digit-like */
-  var masks=digitMasks(), best=null, bd=1e9, second=1e9;
-  for(var d in masks){
-    var diff=0;
-    for(var j=0;j<m.length;j++) if(m[j]!==masks[d][j]) diff++;
-    if(diff<bd){ second=bd; bd=diff; best=+d; } else if(diff<second) second=diff;
-  }
-  if (bd > DW*DH*0.34) return null;
-  if (second - bd < 4) return null;               /* too close to call */
-  return best;
-}
 
 var S = { tab:"scan", deck:[], offer:[], open:null, q:"",
           img:null, taps:[], pending:null, lib:loadLib(), lq:"" };
@@ -635,14 +587,6 @@ function readSlots(){
         }
       });
     });
-    /* if the digit read cleanly, pull matching costs closer and push
-       the rest away. a soft nudge, so a misread digit cannot ruin it */
-    var cost = readCost(S.img, cx, cy, w, hh);
-    if (cost !== null){
-      for(var nm2 in scores){
-        scores[nm2] *= (COST[nm2] === cost) ? 0.55 : 1.25;
-      }
-    }
     var ranked = Object.keys(scores).sort(function(a,b){ return scores[a]-scores[b]; });
     return { x:cx, y:cy, w:w, h:hh, size:w, hash:hash,
              learned:learned, scores:scores, ranked:ranked };
