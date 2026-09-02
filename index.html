@@ -366,21 +366,11 @@ function describe(d, withMask){
 }
 
 function refSig(img){
-  /* The reference images are complete cards, frame and all, exactly
-     like the ones in a screenshot. So take the same artwork window
-     from both. Previously this used the whole reference image against
-     a cropped screenshot, which compared two different regions and
-     made every card score about the same. */
   var W=img.naturalWidth, H=img.naturalHeight;
-  var d = sampleRGBA(img, W*ART_X0, H*ART_Y0,
-                          W*(ART_X1-ART_X0), H*(ART_Y1-ART_Y0), GW, GH);
-  var sig = describe(d, true);
-  /* if the art has no transparency the mask is all ones, which is
-     correct here: every cell is card, not background */
-  var any=0;
-  for(var i=0;i<sig.m.length;i++) any += sig.m[i];
-  if(any < sig.m.length*0.5) for(var j=0;j<sig.m.length;j++) sig.m[j]=1;
-  return sig;
+  var s = fitSig(img, W*ART_X0, H*ART_Y0, W*(ART_X1-ART_X0), H*(ART_Y1-ART_Y0));
+  s.w=W; s.h=H;
+  s.m = []; for(var i=0;i<GW*GH;i++) s.m.push(1);
+  return s;
 }
 
 function shotSig(img, x, y, w, h){
@@ -389,6 +379,7 @@ function shotSig(img, x, y, w, h){
 
 /* Mean-corrected colour difference over the masked cells. */
 function colourDist(shot, ref){
+  if(!ref||!ref.m) return 1e9;
   var n=0, i, k, sm=[0,0,0], rm=[0,0,0];
   for(i=0;i<GW*GH;i++){
     if(!ref.m[i]) continue;
@@ -563,17 +554,29 @@ function recognise(cx, cy, w, hh){
   Object.keys(seen).forEach(function(nm){ if(pool.indexOf(nm)===-1) pool.push(nm); });
 
   var scores={}, artOnly={};
-  [[1,1],[0.93,0.93],[1.07,1.07],[1,0.93],[1,1.07]].forEach(function(kk){
-    var sg = crop(kk[0], kk[1]);
+  /* Search a small set of windows and keep each card's best score.
+     Aspect ratio is preserved by letterboxing, which is what turned
+     a 0.2 point gap into a 29 point one in testing. */
+  var WINDOWS = [];
+  [0.00,0.04,0.08,0.12].forEach(function(y0){
+    [0.62,0.72,0.82].forEach(function(hf){
+      [0.04,0.09,0.14].forEach(function(xi){ WINDOWS.push([y0,hf,xi]); });
+    });
+  });
+
+  WINDOWS.forEach(function(win){
+    var x = cx - w/2 + w*win[2];
+    var y = cy - hh/2 + hh*win[0];
+    var sg = fitSig(S.img, x, y, w*(1-win[2]*2), hh*win[1]);
     pool.forEach(function(nm){
       if(!REF[nm]) return;
-      var d = artScore(sg, REF[nm]);
+      var d = colourDist(sg, REF[nm]);
       if(artOnly[nm]===undefined || d<artOnly[nm]) artOnly[nm]=d;
     });
   });
+
   pool.forEach(function(nm){
     var a = artOnly[nm]===undefined ? 999 : artOnly[nm];
-    /* a screenshot we have seen before pulls that card sharply in */
     var s = seen[nm]===undefined ? null : seen[nm];
     scores[nm] = (s===null) ? a : Math.min(a, s*0.55);
   });
