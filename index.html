@@ -275,8 +275,8 @@ function identifyRef(sig, h){
     else if(d < second){ second = d; }
   }
   /* only trust it when the winner is clearly ahead of the runner up */
-  if (bd > 70) return null;
-  if (second - bd < 4) return null;
+  if (bd > 105) return null;
+  if (second - bd < 1.5) return null;
   return best;
 }
 
@@ -479,19 +479,17 @@ function vScan(){
   if(known.length){
     var rk = known.map(function(t){ return byName(t.name); })
                   .sort(function(a,b){ return b.avg-a.avg; });
-    h += '<div class="eyebrow">Best to worst</div><div class="list">'
+    h += '<div class="eyebrow">Best to worst &middot; tap a name to correct</div><div class="list">'
       + rk.map(function(c,i){ return verdict(c, i===0 && rk.length>1); }).join("") + '</div>';
   }
 
   h += '<div class="wrapOuter"><div id="wrap"><img id="shot" src="'+S.img.src+'" alt="">'
     + '<div class="mk" id="mk"></div></div></div>'
     + '<button class="ghost" data-reset="1">New screenshot</button>';
-  var n=libCount(S.lib), r=Object.keys(REF).length;
-  h += '<div class="meta">card art '+r+'/'+refState.total
-    + (refState.failed?' ('+refState.failed+' failed)':'')
-    + ' &middot; '+n+' learned'
-    + (n?' &middot; <button data-wipe="1" style="color:var(--low);text-decoration:underline;padding:0">reset</button>':'')
-    + '</div>';
+  var r=Object.keys(REF).length;
+  if (r < refState.total){
+    h += '<div class="meta">card art '+r+'/'+refState.total+'</div>';
+  }
   return h;
 }
 
@@ -608,6 +606,14 @@ document.getElementById("view").addEventListener("change",function(e){
   i.src=URL.createObjectURL(f);
 });
 document.getElementById("view").addEventListener("click",function(e){
+  var fx=e.target.closest("[data-fix]");
+  if(fx && S.tab==="scan"){
+    var want=fx.dataset.fix;
+    for(var k=0;k<S.taps.length;k++){
+      if(S.taps[k].name===want){ S.taps[k].name=null; S.taps[k].skipped=false; break; }
+    }
+    nextUnknown(); render(); return;
+  }
   var l=e.target.closest("[data-learn]");
   if(l){ var n=l.dataset.learn, t=S.taps[S.pending];
     if(!S.lib[n]) S.lib[n]=[];

@@ -35,9 +35,9 @@ behaves like a normal app. It also works offline once loaded.
 
 ## What each tab does
 
-**Scan.** Screenshot the draft, load it here, tap each card. The first time it
-sees a card's art you tell it which card it is. After that it recognises it
-automatically. It gets faster the more you use it.
+**Scan.** Screenshot the draft and load it here. It finds the three cards and
+identifies them by comparing their colour signature against the card art in
+`cards/`. Tap a result to correct it if it gets one wrong, and it remembers.
 
 **Cards.** All 50 cards. Three boxes each for common, rare and epic. The bar
 underneath shows the split, so a card with two S mods and one B reads as 67%
@@ -78,10 +78,12 @@ Average of every card's three modifier scores. The wave bars use the rarity odds
 above against your 8 cards, and work out the chance that at least one of the two
 offers is S or A.
 
-### Tier scores
+### Ratings
 
-S 95, A 82, B 64, C 46, D 28, F 10. These live at the top of `index.html` in the
-`TIER` object. Change them and everything re-ranks.
+Every modifier carries RoyaleAPI's rating, derived from real win rates across
+millions of battles. Letters are bands over that rating: S is 70 and above, A is
+52, B is 38, C is 25, D below that. The bands live in the `BANDS` array in
+`index.html`.
 
 ---
 
@@ -90,42 +92,39 @@ S 95, A 82, B 64, C 46, D 28, F 10. These live at the top of `index.html` in the
 Card data is the `RAW` array in `index.html`. One line per card:
 
 ```js
-["Knight", ["D","+200% health, -50% speed"], ["A","Permastun hit attack"], ["A","Turns into Mega Knight"]],
+["Knight", ["Truly of the Round Table","+200% hitpoints, -50% speed",71],
+           ["An Absolute Stunner","Stun attack",36],
+           ["Not This Guy Again!","Spawn Mega Knight",52]],
 ```
 
-Name, then common, rare and epic. Each modifier is a tier letter and its effect.
+Name, then common, rare and epic. Each modifier is its name, its effect and its
+rating.
 
-Modifier effects and rarity slots come from the community list and are accurate.
-**The tier letters are estimates and need replacing.** That is the main thing
-this project still needs.
+All of it comes from RoyaleAPI: modifier names and effects from the CHAOS mode
+writeup, ratings from the live modifier stats page. Eight pool cards show no data
+because their modifiers are not catalogued yet.
 
 ---
 
 ## Card recognition
 
-The scan tab uses a perceptual hash. It shrinks the tapped crop to 9x8 pixels in
-greyscale, then compares each pixel to its right hand neighbour. That gives 64
-bits describing the shape of the brightness rather than exact pixels, so it
-survives different screen sizes and screenshot scaling.
+The three cards sit in fixed positions on the pick screen, so the app crops them
+by proportion rather than asking you to point at them.
 
-Matching is by Hamming distance. Under 12 bits different counts as the same card.
+Each crop is reduced to a 4x4 grid of average colour, 48 numbers, and compared
+against the same signature computed from every image in `cards/`. Colour is used
+rather than brightness because it survives the difference between the card icon
+and the framed card in game. A brightness hash breaks ties.
 
-Two things to tune if recognition is unreliable. The crop size is set to one
-eighth of the screenshot width. `THRESH` at the top controls how strict matching
-is: lower it if it confuses similar cards, raise it if it fails on cards you have
-already taught it.
+A match is only accepted when the best candidate is clearly ahead of the runner
+up, so an uncertain card asks rather than guessing. Corrections are stored in
+your browser and take priority afterwards.
 
-Fingerprints are stored in your browser. They do not leave your device.
+Tuning lives in `identifyRef`: the distance ceiling and the margin the winner
+needs over second place.
 
----
-
-## Android app version
-
-There is a WebView wrapper that runs this as a real Android app with a floating
-overlay. It needs the `SYSTEM_ALERT_WINDOW` permission and a foreground service.
-Not included in this repo yet.
-
-Not possible on iOS. Apple does not allow drawing over other apps.
+Run `get-cards.sh` once to populate `cards/`. The images have to be served from
+the same origin as the page, otherwise the browser will not let it read them.
 
 ---
 
