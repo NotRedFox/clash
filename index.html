@@ -728,14 +728,14 @@ function verdict(c,win,rank){
 
 function diagBlock(){
   return '<div class="diag">' + S.taps.map(function(t,i){
-    var rows = (t.cands||[]).map(function(nm){
-      var v = t.scores && t.scores[nm]!==undefined ? Math.round(t.scores[nm]) : "-";
-      return '<div><span>'+esc(nm)+'</span><b>'+v+'</b></div>';
-    }).join("");
+    var rows = (t.cands||[]).map(function(nm,j){
+      var v = (t.scores && t.scores[nm]!==undefined) ? t.scores[nm].toFixed(1) : "-";
+      return '<div><span>'+(j+1)+'. '+esc(nm)+'</span><b>'+v+'</b></div>';
+    }).join("") || '<div><span>no candidates</span><b>-</b></div>';
     return '<div class="diagCol"><div class="diagH">slot '+(i+1)
-      + ' &middot; cost '+(t.cost||"?")
-      + ' &middot; '+(t.why||"-")
-      + (t.pool?' &middot; '+t.pool+' considered':'')
+      + ' &middot; cost '+(t.cost===null||t.cost===undefined?"?":t.cost)
+      + ' &middot; via '+(t.why||"-")
+      + ' &middot; considered '+(t.pool===undefined?"?":t.pool)
       + '</div>'+rows+'</div>';
   }).join("") + '</div>';
 }
@@ -755,7 +755,8 @@ function vScan(){
     var costs = S.taps.map(function(t){ return t.cost || "?"; }).join("  ");
     h += '<div class="eyebrow">Best to worst &middot; tap a name to correct'
       + (lowest < 0.25 ? ' &middot; low confidence' : '') + '</div>'
-      + '<div class="meta" style="padding:0 16px 10px">elixir read: '+esc(costs)+'</div>'
+      + '<div class="meta" style="padding:0 16px 8px">elixir read: '+esc(costs)+'</div>'
+      + diagBlock()
       + '<div class="list">'
       + rk.map(function(c,i){ return verdict(c, i===0 && rk.length>1); }).join("") + '</div>';
   }
