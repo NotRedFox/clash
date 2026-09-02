@@ -1423,6 +1423,99 @@ async function embScan(){
 }
 
 
+
+/* ── crop domain test ───────────────────────────────────────────
+   Two questions. Does a wider crop help, and does degrading the
+   references to match the screenshot's condition help. Diagnostic
+   only: nothing here feeds the card selection. */
+var VT = { running:false, rows:[], degraded:null, done:0, total:0 };
+var DEG_KEY = "chaosEmbDegraded_v1";
+
+/* A reference put through what the screenshot went through: shrunk to
+   the size a mega tile actually occupies, then blown back up. */
+async function embedDegraded(img, tw, th){
+  var s = document.createElement("canvas");
+  s.width = tw; s.height = th;
+  var sg = s.getContext("2d");
+  sg.drawImage(img, 0, 0, img.naturalWidth, img.naturalHeight, 0, 0, tw, th);
+  return await embedImage(s, 0, 0, tw, th);
+}
+
+async function buildDegraded(tw, th){
+  var cached = await idbGet(DEG_KEY);
+  var names = Object.keys(REFIMG);
+  if(cached && Object.keys(cached).length >= names.length){
+    VT.degraded = cached; return;
+  }
+  VT.degraded = {};
+  VT.total = names.length; VT.done = 0;
+  for(var i=0;i<names.length;i++){
+    VT.degraded[names[i]] = await embedDegraded(REFIMG[names[i]], tw, th);
+    VT.done++;
+    if(VT.done % 10 === 0) render();
+  }
+  await idbSet(DEG_KEY, VT.degraded);
+}
+
+function topN(vec, bank, n){
+  return Object.keys(bank).map(function(nm){
+    return { nm:nm, s:cosine(vec, bank[nm]) };
+  }).sort(function(a,b){ return b.s-a.s; }).slice(0, n||5);
+}
+
+async function runVariantTest(){
+  if(!EMB.ready || !S.img || !S.taps.length || VT.running) return;
+  VT.running = true; VT.rows = []; render();
+
+  var t0 = S.taps[0];
+  await buildDegraded(Math.round(t0.w), Math.round(t0.h));
+
+  var slots = S.taps.slice(0, 6);
+  for(var i=0;i<slots.length;i++){
+    var t = slots[i];
+    var out = { slot:i+1, variants:[] };
+    var scales = [["A current",1.0],["B +50%",1.5],["C +100%",2.0]];
+    for(var k=0;k<scales.length;k++){
+      var f = scales[k][1];
+      var w = t.w*f, h = t.h*f;
+      var v = await embedImage(S.img, t.x-w/2, t.y-h/2, w, h);
+      out.variants.push({
+        name: scales[k][0],
+        px: Math.round(w)+"x"+Math.round(h),
+        clean: topN(v, EMB.refs, 5),
+        deg:   VT.degraded ? topN(v, VT.degraded, 5) : []
+      });
+    }
+    VT.rows.push(out);
+    render();
+  }
+  VT.running = false; render();
+}
+
+function variantBlock(){
+  if(!EMB.ready) return "";
+  var head = '<div class="diagCol"><div class="diagH">crop domain test &middot; '
+    + 'A current, B +50%, C +100% &middot; clean vs degraded references'
+    + (VT.total && VT.done < VT.total ? ' &middot; degrading '+VT.done+'/'+VT.total : '')
+    + '</div>'
+    + '<div><span>run</span><b><button data-vt="1" '
+    + 'style="color:var(--acc);text-decoration:underline;padding:0">'
+    + (VT.running ? "running..." : "start test") + '</button></b></div>';
+
+  var body = VT.rows.map(function(r){
+    return '<div class="diagH" style="margin-top:8px">slot '+r.slot+'</div>'
+      + r.variants.map(function(v){
+          function fmt(list){
+            return list.map(function(e){ return esc(e.nm)+' '+e.s.toFixed(3); }).join(', ');
+          }
+          return '<div><span>'+v.name+' &middot; '+v.px+'</span><b>'
+            + 'clean: '+fmt(v.clean)+'<br>degraded: '+fmt(v.deg)+'</b></div>';
+        }).join("");
+  }).join("");
+
+  return head + body + '</div>';
+}
+
 /* ── embedding self-test ────────────────────────────────────────
    Prove the pipeline can tell references apart before trusting it on
    screenshots. An image against itself must score 1.000. */
@@ -1880,7 +1973,7 @@ function pairBlock(){
 }
 
 function diagBlock(){
-  return '<div class="diag">' + embSelfTest() + embBlock() + compareBlock() + kpBlock() + boxOverlay() + rawCrops() + cropScaleTest() + baselineBlock() + resTest() + featureBlock() + expBlock() + sweepBlock() + pairBlock() + S.taps.map(function(t,i){
+  return '<div class="diag">' + variantBlock() + embSelfTest() + embBlock() + compareBlock() + kpBlock() + boxOverlay() + rawCrops() + cropScaleTest() + baselineBlock() + resTest() + featureBlock() + expBlock() + sweepBlock() + pairBlock() + S.taps.map(function(t,i){
     var rows = (t.cands||[]).map(function(nm,j){
       var d = t.detail && t.detail[nm];
       var v = d ? ('geo '+d.geo+' &middot; good '+d.good
@@ -2154,6 +2247,7 @@ document.getElementById("view").addEventListener("click",function(e){
     if(S.img) readSlots();
     render(); return;
   }
+  if(e.target.closest("[data-vt]")){ runVariantTest(); render(); return; }
   if(e.target.closest("[data-emb]")){
     if(EMB.ready) embScan(); else embInit().then(embScan);
     render(); return;
