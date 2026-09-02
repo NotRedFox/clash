@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#101014">
+<title>Chaos Draft</title>
+<style>
+:root{
+  --bg:#101014; --surface:#18181E; --line:#26262F; --line2:#33333F;
+  --ink:#F0F0F2; --mid:#9A9AA6; --low:#61616E; --acc:#FFD400;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg)}
+body{
+  color:var(--ink);
+  font:400 15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+  padding:calc(12px + env(safe-area-inset-top)) 0 calc(24px + env(safe-area-inset-bottom));
+  max-width:460px;margin:0 auto;-webkit-text-size-adjust:100%;
+}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+button:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+.pad{padding:0 16px}
+
+/* tabs */
+.tabs{display:flex;border-bottom:1px solid var(--line);margin-bottom:2px}
+.tabs button{
+  flex:1;min-height:46px;font-size:.72rem;font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--low);border-bottom:2px solid transparent;margin-bottom:-1px;
+}
+.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--acc)}
+
+/* section heads */
+.eyebrow{
+  font-size:.66rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--low);padding:18px 16px 8px;
+}
+
+/* card list */
+.list{border-top:1px solid var(--line)}
+.item{border-bottom:1px solid var(--line)}
+.item.on{background:var(--surface);box-shadow:inset 3px 0 0 var(--acc)}
+.head{display:flex;align-items:center;gap:12px;padding:0 16px;min-height:50px}
+.nm{flex:1;min-width:0;text-align:left;font-size:.9rem;font-weight:600;padding:14px 0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tiers{display:flex;gap:2px;flex:none}
+.t{width:21px;height:21px;font-size:.66rem;font-weight:800;color:#101014;
+  display:grid;place-items:center;font-variant-numeric:tabular-nums}
+.add{width:30px;height:30px;flex:none;border:1px solid var(--line2);color:var(--mid);
+  font-size:1rem;line-height:1;display:grid;place-items:center}
+.add.on{background:var(--acc);border-color:var(--acc);color:#101014;font-weight:800}
+
+.tbar{display:flex;height:5px;margin:0 16px 12px}
+.tbar div{height:100%}
+.tlab{display:flex;gap:10px;padding:0 16px 11px;font-size:.64rem;color:var(--mid);
+  font-variant-numeric:tabular-nums}
+.tlab span{display:flex;align-items:center;gap:4px}
+.tlab i{width:7px;height:7px;display:block}
+.exp{padding:2px 16px 14px;display:flex;flex-direction:column;gap:11px}
+.mod{display:grid;grid-template-columns:3px 1fr;gap:11px}
+.bar{background:var(--line2)}
+.mr{font-size:.62rem;font-weight:700;letter-spacing:.1em;color:var(--low);text-transform:uppercase}
+.me{font-size:.82rem;color:#C9C9D2;margin-top:2px}
+
+/* search */
+.srch{width:100%;min-height:44px;padding:0 16px;background:var(--surface);
+  border:0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+  color:var(--ink);font:inherit;font-size:.9rem}
+.srch:focus{outline:none}
+.srch::placeholder{color:var(--low)}
+
+/* deck panel */
+.stat{display:flex;align-items:flex-end;justify-content:space-between;padding:6px 16px 18px}
+.big{font-size:2.6rem;font-weight:800;line-height:.9;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.statLbl{font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;color:var(--low)}
+.wave{display:grid;grid-template-columns:14px 1fr 34px;gap:11px;align-items:center;
+  padding:9px 16px;border-bottom:1px solid var(--line)}
+.wn{font-size:.72rem;font-weight:700;color:var(--mid);font-variant-numeric:tabular-nums}
+.trk{height:6px;background:var(--surface)}
+.fil{height:100%;background:var(--acc);transition:width .25s}
+.wp{font-size:.78rem;font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
+.chips{display:flex;flex-wrap:wrap;gap:4px;padding:14px 16px}
+.chips button{background:var(--surface);border:1px solid var(--line);padding:7px 10px;
+  font-size:.75rem;color:var(--mid)}
+
+/* verdict */
+.pk{border-bottom:1px solid var(--line);padding:14px 16px}
+.pk.win{background:var(--surface);box-shadow:inset 3px 0 0 var(--acc)}
+.pkTop{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:10px}
+.rk{display:inline-block;min-width:20px;margin-right:8px;color:var(--low);
+  font-size:.8rem;font-weight:700;font-variant-numeric:tabular-nums}
+.pkNm{font-size:1.05rem;font-weight:700;letter-spacing:-.01em}
+.pkSc{font-size:1.05rem;font-weight:800;font-variant-numeric:tabular-nums;color:var(--acc)}
+.tag{font-size:.6rem;font-weight:800;letter-spacing:.1em;color:var(--acc);
+  display:block;margin-bottom:4px}
+.pkMods{display:flex;flex-direction:column;gap:5px}
+.pkMod{display:grid;grid-template-columns:21px 1fr;gap:9px;align-items:center}
+
+/* scan */
+.cta{display:grid;place-items:center;width:100%;min-height:50px;background:var(--acc);
+  color:#101014;font-weight:800;font-size:.85rem;letter-spacing:.04em;text-transform:uppercase}
+.ghost{display:block;width:100%;min-height:44px;border-top:1px solid var(--line);
+  color:var(--mid);font-size:.8rem}
+#wrap{position:relative}
+#shot{width:100%;display:block}
+.mk{position:absolute;inset:0;pointer-events:none}
+.mk div{position:absolute;border:2px solid var(--acc);transform:translate(-50%,-50%)}
+.mk b{position:absolute;top:-8px;left:-2px;background:var(--acc);color:#101014;
+  font-size:.58rem;padding:0 4px;white-space:nowrap}
+.ask{border-top:2px solid var(--acc);background:var(--surface)}
+.askH{font-size:.8rem;font-weight:700;padding:14px 16px 0}
+.opts{max-height:220px;overflow-y:auto}
+.opts button{display:block;width:100%;text-align:left;padding:11px 16px;font-size:.85rem;
+  border-bottom:1px solid var(--line)}
+
+.meta{font-size:.7rem;color:var(--low);padding:16px}
+.key{display:flex;flex-wrap:wrap;gap:10px;padding:16px;font-size:.68rem;color:var(--mid)}
+.key span{display:flex;align-items:center;gap:5px}
+.key i{width:9px;height:9px;display:block}
+
+@media (max-width:350px){ body{font-size:14px} .t{width:19px;height:19px} }
+@media (prefers-reduced-motion:reduce){ .fil{transition:none} }
+</style>
+</head>
+<body>
+
+<div class="tabs" role="tablist">
+  <button role="tab" data-tab="scan" aria-selected="true">Scan</button>
+  <button role="tab" data-tab="cards" aria-selected="false">Cards</button>
+  <button role="tab" data-tab="deck" aria-selected="false">Deck</button>
+  <button role="tab" data-tab="draft" aria-selected="false">Draft</button>
+</div>
+
+<div id="view"></div>
+
+<script>
+"use strict";
+
+var WAVES = [
+  {n:1, clock:"2:56", common:.90, rare:.10, epic:0},
+  {n:2, clock:"2:11", common:.20, rare:.80, epic:0},
+  {n:3, clock:"1:26", common:0,   rare:.50, epic:.50},
+  {n:4, clock:"0:26", common:0,   rare:.20, epic:.80},
+  {n:5, clock:"OT",   common:0,   rare:0,   epic:1}
+];
+
+var TIER = {
+  S:{v:95,c:"#FFD400",n:"Broken"},
+  A:{v:82,c:"#FF4B3E",n:"Very good"},
+  B:{v:64,c:"#A76BE8",n:"Good"},
+  C:{v:46,c:"#5F6070",n:"Meh"},
+  D:{v:28,c:"#3E3F4C",n:"Weak"},
+  F:{v:10,c:"#2A2B36",n:"Dead"}
+};
+var GOOD = ["S","A"];
+var R = ["common","rare","epic"];
+function isGood(t){ return GOOD.indexOf(t) !== -1; }
+
+var RAW = [
+["Baby Dragon",["C","+200% movement speed"],["B","Fireball attack"],["B","Evo Dragon egg on death"]],
+["Barb Hut",["C","Double spawn speed"],["B","Spawns E-Barbs"],["A","Spawns little Mega Knights"]],
+["Berserker",["B","+200% attack speed"],["B","Bandit dash"],["B","Heal on attack"]],
+["Dart Goblin",["B","+100% attack speed"],["A","Magic Archer darts"],["S","Sparky shots"]],
+["Electro Spirit",["B","Triple E-Spirit"],["B","Zaps all units"],["A","Spawns Lightning on hit"]],
+["Electro Wizard",["B","Spawns with 3 E-Spirits"],["A","5 chains on attack"],["S","Chains every unit"]],
+["Elixir Golem",["D","+2 Golemites"],["C","Gives Elixir on death"],["B","Blobs that evolve"]],
+["Executioner",["B","Double HP"],["A","4 axes"],["A","Tornado axe"]],
+["Fireball",["B","Leaves a fire spot"],["A","Mirrored Fireball"],["S","Tornado and 3 Fireballs"]],
+["Fisherman",["C","Double HP"],["B","Hooks air troops"],["A","Infinite hook range"]],
+["Flying Machine",["B","Double attack speed"],["B","Spawns Goblins"],["A","Gives Inferno Tower"]],
+["Furnace",["B","+400% Fire Spirit range"],["A","Spawns every Spirit"],["F","Furnace cannot move"]],
+["Giant",["C","Speed buff"],["B","Charging Giant"],["A","Giant Barb Barrel"]],
+["Snowball",["D","+300% snow duration"],["C","+300% knockback"],["B","5 Evo Snowballs"]],
+["Goblin Barrel",["B","Fireball on impact"],["A","2 barrels"],["A","3 Goblin Brawlers"]],
+["Goblin Demolisher",["A","+150% range"],["A","Evo Bomber attack"],["A","Bomb trail"]],
+["Goblin Drill",["B","Spawns Dart Goblins"],["A","Infinite lifetime"],["S","Multiple Evo Drills"]],
+["Goblin Giant",["C","Double spear range"],["B","Turns into Giant Goblin"],["A","Sparky spears"]],
+["Goblin Hut",["D","Double sight range"],["B","Turns into Party Hut"],["A","Spawns Demolishers"]],
+["Golem",["C","Gives 4 Elixir on death"],["S","Splits into 2 Golems"],["S","Deflects all projectiles"]],
+["Graveyard",["B","Double Skeletons"],["A","Spawns Guards instead"],["A","Random Skeleton troops"]],
+["Hunter",["B","Increased projectile range"],["C","Walks in a bush"],["A","Flamethrower"]],
+["Ice Spirit",["B","Triple Ice Spirit"],["A","Freezes for 5 seconds"],["B","Hero Ice Golem effect"]],
+["Ice Wizard",["D","Deploy range buff"],["A","Permanent slowdown"],["S","Permanent freeze"]],
+["Inferno Tower",["B","Half beam upgrade time"],["A","3 beams at once"],["A","Max speed permanently"]],
+["Knight",["D","+200% health, -50% speed"],["A","Permastun hit attack"],["A","Turns into Mega Knight"]],
+["Lavahound",["B","+500% attack speed"],["B","6 Fire Spirits on death"],["A","Constant Lava Pups"]],
+["Megaknight",["B","Double jump damage"],["S","Infinite jump range"],["S","Infinite jump attacks"]],
+["Mortar",["B","+200% attack speed"],["A","Shoots Barbarians"],["B","Invisible Mortar"]],
+["Mother Witch",["C","Double Hogs per kill"],["B","Hogs curse on death"],["A","Hogs become Witches"]],
+["Musketeer",["B","Shotgun shot"],["A","Double range"],["S","2 Elite Musketeers"]],
+["Night Witch",["C","+4 Bats on defeat"],["B","Spawns Evo Bats"],["A","Bats across the arena"]],
+["Pekka",["B","+200% movement speed"],["A","3 small big P.E.K.K.As"],["S","Spawn anywhere"]],
+["Poison",["C","+150% slow effect"],["B","Damage and radius grow"],["A","Permanent Poison"]],
+["Princess",["B","Double attack speed"],["B","+55% range"],["A","Triple attack"]],
+["Rage",["C","+200% range, more damage"],["C","Increased rage speedup"],["A","Permanent rage buff"]],
+["Ram Rider",["C","Double charge damage"],["B","Evo Hunter net snares"],["A","Snare + Battle Ram"]],
+["Little Rascals",["D","+2 Rascal Girls"],["B","Rascal Boy becomes Giant"],["A","Boss Bandit + Archers"]],
+["Rocket",["C","Radius increase"],["B","Goblin party Rocket"],["C","Bouncy Rocket"]],
+["Royal Delivery",["C","Becomes Evo Recruit"],["B","Can spawn anywhere"],["D","Spawns a random unit"]],
+["Royal Giant",["B","Splash damage"],["A","+200% range"],["S","Shoots Royal Hogs"]],
+["Rune Giant",["C","Improved buff"],["B","Spawns 2 Berserkers"],["A","Buffs every unit"]],
+["Suspicious Bush",["C","Spawns Vines on attack"],["C","Double Goblins"],["B","4 Goblin Brawlers"]],
+["The Log",["B","Boomerang Log"],["A","Infinite range"],["A","Lumberjack at end of log"]],
+["Tombstone",["B","Double spawn, death damage"],["B","Spawns Wall Breakers"],["A","Guards + Skeleton King"]],
+["Vines",["B","Double radius, hits 6"],["C","Spawns Suspicious Bush"],["S","Infinite Vines"]],
+["Witch",["B","Double spawn speed"],["B","Spawns Guards"],["A","Spawns Evo Skeletons"]],
+["Wizard",["C","Increased splash range"],["A","Fireball attack"],["A","Spawns Wizard trio"]],
+["X-bow",["C","+50% extra range"],["B","Magic Archer shots"],["A","Sparky shots"]],
+["Zappies",["C","Double attack speed"],["C","+2 Zappies"],["A","Mini Sparkies"]]
+];
+
+var CARDS = RAW.map(function(x){
+  return {
+    card:x[0],
+    common:{t:x[1][0], e:x[1][1]},
+    rare:{t:x[2][0], e:x[2][1]},
+    epic:{t:x[3][0], e:x[3][1]},
+    avg:(TIER[x[1][0]].v + TIER[x[2][0]].v + TIER[x[3][0]].v)/3
+  };
+}).sort(function(a,b){ return b.avg - a.avg; });
+
+function byName(n){ for (var i=0;i<CARDS.length;i++) if (CARDS[i].card===n) return CARDS[i]; return null; }
+function esc(s){
+  return String(s).replace(/[&<>"]/g,function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];
+  });
+}
+
+/* dHash: shrink crop to 9x8 grey, compare each pixel to its
+   right neighbour. 64 bits of brightness shape, resolution independent. */
+var HW=9, HH=8, THRESH=12, LIB_KEY="chaosCardHashes";
+
+function loadLib(){ try{ return JSON.parse(localStorage.getItem(LIB_KEY))||{}; }catch(e){ return {}; } }
+function saveLib(l){ try{ localStorage.setItem(LIB_KEY, JSON.stringify(l)); }catch(e){} }
+function libCount(l){ var n=0; for(var k in l) if(l.hasOwnProperty(k)) n+=l[k].length; return n; }
+
+function hashCrop(img,cx,cy,size){
+  var c=document.createElement("canvas"); c.width=HW; c.height=HH;
+  var x=c.getContext("2d",{willReadFrequently:true}), h=size/2;
+  x.drawImage(img,cx-h,cy-h,size,size,0,0,HW,HH);
+  var d=x.getImageData(0,0,HW,HH).data, g=[];
+  for(var i=0;i<HW*HH;i++) g.push(.299*d[i*4]+.587*d[i*4+1]+.114*d[i*4+2]);
+  var b="";
+  for(var y=0;y<HH;y++) for(var q=0;q<HW-1;q++) b += g[y*HW+q] < g[y*HW+q+1] ? "1":"0";
+  return b;
+}
+function ham(a,b){ var n=0; for(var i=0;i<a.length;i++) if(a[i]!==b[i]) n++; return n; }
+function identify(h,lib){
+  var best=null,bd=999;
+  for(var k in lib){ if(!lib.hasOwnProperty(k)) continue;
+    for(var i=0;i<lib[k].length;i++){ var d=ham(h,lib[k][i]); if(d<bd){bd=d;best=k;} } }
+  return bd<=THRESH ? best : null;
+}
+
+var S = { tab:"scan", deck:[], offer:[], open:null, q:"",
+          img:null, taps:[], pending:null, lib:loadLib(), lq:"",
+ };
+
+function toggle(a,n,max){
+  var i=a.indexOf(n);
+  if(i!==-1) a.splice(i,1); else if(a.length<max) a.push(n);
+}
+
+function item(c,sel){
+  var boxes = R.map(function(r){
+    return '<span class="t" style="background:'+TIER[c[r].t].c+'">'+c[r].t+'</span>';
+  }).join("");
+  var exp = S.open===c.card
+    ? '<div class="exp">' + R.map(function(r){
+        return '<div class="mod"><span class="bar" style="background:'+TIER[c[r].t].c+'"></span>'
+          + '<div><div class="mr">'+r+'</div><div class="me">'+esc(c[r].e)+'</div></div></div>';
+      }).join("") + '</div>'
+    : "";
+  return '<div class="item'+(sel?" on":"")+'"><div class="head">'
+    + '<button class="nm" data-open="'+esc(c.card)+'">'+esc(c.card)+'</button>'
+    + '<div class="tiers">'+boxes+'</div>'
+    + '<button class="add'+(sel?" on":"")+'" data-toggle="'+esc(c.card)+'">'
+    + (sel?"\u2713":"+")+'</button></div>' + tierBar(c) + exp + '</div>';
+}
+
+/* Share of a card's three modifiers at each tier. Equal thirds,
+   grouped so two S mods read as one 67% block. */
+function share(c){
+  var count = {};
+  R.forEach(function(r){ count[c[r].t] = (count[c[r].t]||0) + 1; });
+  return Object.keys(count)
+    .sort(function(a,b){ return TIER[b].v - TIER[a].v; })
+    .map(function(t){ return { t:t, pct: count[t]/3 }; });
+}
+
+function tierBar(c){
+  var s = share(c);
+  return '<div class="tbar">' + s.map(function(x){
+      return '<div style="width:'+(x.pct*100)+'%;background:'+TIER[x.t].c+'"></div>';
+    }).join("") + '</div><div class="tlab">' + s.map(function(x){
+      return '<span><i style="background:'+TIER[x.t].c+'"></i>'
+        + Math.round(x.pct*100)+'% '+x.t+'</span>';
+    }).join("") + '</div>';
+}
+
+function filtered(){
+  var q=S.q.toLowerCase();
+  return CARDS.filter(function(c){ return c.card.toLowerCase().indexOf(q)!==-1; });
+}
+
+function verdict(c,win,rank){
+  return '<div class="pk'+(win?" win":"")+'">'
+    + (win?'<span class="tag">TAKE THIS</span>':"")
+    + '<div class="pkTop"><span class="pkNm">'
+    + (rank ? '<span class="rk">'+rank+'</span>' : "") + esc(c.card)+'</span>'
+    + '<span class="pkSc">'+Math.round(c.avg)+'</span></div>'
+    + '<div class="tbar" style="margin:0 0 10px">' + share(c).map(function(x){
+        return '<div style="width:'+(x.pct*100)+'%;background:'+TIER[x.t].c+'"></div>';
+      }).join("") + '</div><div class="pkMods">'
+    + R.map(function(r){
+        return '<div class="pkMod"><span class="t" style="background:'+TIER[c[r].t].c+'">'
+          + c[r].t+'</span><span class="me">'+esc(c[r].e)+'</span></div>';
+      }).join("") + '</div></div>';
+}
+
+function vScan(){
+  var h = '<label class="cta">Load screenshot'
+    + '<input type="file" accept="image/*" id="file" style="display:none"></label>';
+
+  if (S.img){
+    h += '<div id="wrap"><img id="shot" src="'+S.img.src+'" alt="">'
+      + '<div class="mk" id="mk"></div></div>'
+      + '<div class="eyebrow">Tap each card</div>';
+  }
+
+  if (S.pending !== null){
+    h += '<div class="ask"><div class="askH">Which card?</div>'
+      + '<input class="srch" id="lq" placeholder="Search" value="'+esc(S.lq)+'" style="margin-top:10px">'
+      + '<div class="opts">'
+      + CARDS.filter(function(c){ return c.card.toLowerCase().indexOf(S.lq.toLowerCase())!==-1; })
+             .map(function(c){ return '<button data-learn="'+esc(c.card)+'">'+esc(c.card)+'</button>'; })
+             .join("")
+      + '</div><button class="ghost" data-cancel="1">Cancel</button></div>';
+  }
+
+  var found = S.taps.filter(function(t){ return t.name; });
+  if (found.length){
+    var rk = found.map(function(t){ return byName(t.name); })
+                  .sort(function(a,b){ return b.avg-a.avg; });
+    h += '<div class="list" style="margin-top:2px">'
+      + rk.map(function(c,i){ return verdict(c, i===0 && rk.length>1); }).join("") + '</div>';
+  }
+
+  if (S.img) h += '<button class="ghost" data-reset="1">Start over</button>';
+
+  var n = libCount(S.lib);
+  h += '<div class="meta">'+n+' learned'
+    + (n ? ' &middot; <button data-wipe="1" style="color:var(--low);text-decoration:underline;padding:0">reset</button>' : '')
+    + '</div>';
+  return h;
+}
+
+function vCards(){
+  return '<input class="srch" id="q" placeholder="Search cards" value="'+esc(S.q)+'">'
+    + '<div class="list">'+filtered().map(function(c){
+        return item(c, S.deck.indexOf(c.card)!==-1);
+      }).join("")+'</div>'
+    + '<div class="key">'+Object.keys(TIER).map(function(k){
+        return '<span><i style="background:'+TIER[k].c+'"></i>'+k+' '+TIER[k].n+'</span>';
+      }).join("")+'</div>';
+}
+
+function vDeck(){
+  if (!S.deck.length){
+    return '<div class="meta" style="padding-top:30px">Add cards from the Cards tab.</div>';
+  }
+  var cs = S.deck.map(byName);
+  var avg = cs.reduce(function(a,c){ return a+c.avg; },0)/cs.length;
+  var odds = WAVES.map(function(w){
+    var pw=0;
+    R.forEach(function(r){
+      if(!w[r]) return;
+      pw += w[r] * (cs.filter(function(c){ return !isGood(c[r].t); }).length/cs.length);
+    });
+    return { n:w.n, clock:w.clock, p:1-pw*pw };
+  });
+
+  return '<div class="stat"><div><div class="big">'+Math.round(avg)+'</div>'
+    + '<div class="statLbl">deck rating</div></div>'
+    + '<div style="text-align:right"><div class="big">'+S.deck.length+'</div>'
+    + '<div class="statLbl">of 8</div></div></div>'
+    + '<div class="eyebrow">Odds of an S or A offer</div>'
+    + '<div style="border-top:1px solid var(--line)">'
+    + odds.map(function(w){
+        return '<div class="wave"><span class="wn">'+w.n+'</span>'
+          + '<div class="trk"><div class="fil" style="width:'+(w.p*100)+'%"></div></div>'
+          + '<span class="wp">'+Math.round(w.p*100)+'</span></div>';
+      }).join("") + '</div>'
+    + '<div class="chips">'+S.deck.map(function(n){
+        return '<button data-toggle="'+esc(n)+'">'+esc(n)+' \u00d7</button>';
+      }).join("")+'</div>';
+}
+
+function vDraft(){
+  /* Three or fewer is a normal draft, so best first with a verdict.
+     More than that is a mega draft, so rank it worst to best. */
+  var mega = S.offer.length > 3;
+  var rk = S.offer.map(byName).sort(function(a,b){
+    return mega ? a.avg-b.avg : b.avg-a.avg;
+  });
+
+  var h = "";
+  if (rk.length){
+    h = '<div class="eyebrow">'
+      + (mega ? 'Mega draft &middot; worst to best' : 'Best pick')
+      + '</div><div class="list">'
+      + rk.map(function(c,i){
+          var top = mega ? (i === rk.length-1) : (i === 0 && rk.length > 1);
+          return verdict(c, top, mega ? (rk.length - i) : 0);
+        }).join("")
+      + '</div><button class="ghost" id="clear">Clear</button>';
+  }
+
+  return h + '<input class="srch" id="q" placeholder="Search cards" value="'+esc(S.q)+'">'
+    + '<div class="list">'+filtered().map(function(c){
+        return item(c, S.offer.indexOf(c.card)!==-1);
+      }).join("")+'</div>';
+}
+
+function render(){
+  var el=document.getElementById("view"), af=document.activeElement;
+  var fid=(af&&(af.id==="q"||af.id==="lq"))?af.id:null;
+  var car=fid?af.selectionStart:null;
+
+  el.innerHTML = S.tab==="scan" ? vScan()
+               : S.tab==="cards" ? vCards()
+               : S.tab==="deck" ? vDeck() : vDraft();
+
+  document.querySelectorAll(".tabs button").forEach(function(b){
+    b.setAttribute("aria-selected", b.dataset.tab===S.tab ? "true":"false");
+  });
+
+  if (fid){ var f=document.getElementById(fid); if(f){ f.focus(); f.setSelectionRange(car,car);} }
+  marks();
+}
+
+function marks(){
+  var box=document.getElementById("mk"), shot=document.getElementById("shot");
+  if(!box||!shot) return;
+  var sc = shot.clientWidth / S.img.naturalWidth;
+  box.innerHTML = S.taps.map(function(t){
+    var s=t.size*sc;
+    return '<div style="left:'+(t.x*sc)+'px;top:'+(t.y*sc)+'px;width:'+s+'px;height:'+s+'px">'
+      + '<b>'+(t.name?esc(t.name):"?")+'</b></div>';
+  }).join("");
+}
+
+document.querySelector(".tabs").addEventListener("click",function(e){
+  var b=e.target.closest("button[data-tab]"); if(!b) return;
+  S.tab=b.dataset.tab; S.open=null; render();
+});
+
+document.getElementById("view").addEventListener("change",function(e){
+  if(e.target.id!=="file") return;
+  var f=e.target.files&&e.target.files[0]; if(!f) return;
+  var i=new Image();
+  i.onload=function(){ S.img=i; S.taps=[]; S.pending=null; render(); };
+  i.src=URL.createObjectURL(f);
+});
+
+document.getElementById("view").addEventListener("click",function(e){
+  var shot=e.target.closest("#shot");
+  if(shot){
+    var rc=shot.getBoundingClientRect(), sc=S.img.naturalWidth/rc.width;
+    var x=(e.clientX-rc.left)*sc, y=(e.clientY-rc.top)*sc;
+    var size=Math.round(S.img.naturalWidth/8);
+    var h=hashCrop(S.img,x,y,size), hit=identify(h,S.lib);
+    S.taps.push({x:x,y:y,size:size,hash:h,name:hit});
+    if(!hit){ S.pending=S.taps.length-1; S.lq=""; }
+    render(); return;
+  }
+  var l=e.target.closest("[data-learn]");
+  if(l){
+    var n=l.dataset.learn, t=S.taps[S.pending];
+    if(!S.lib[n]) S.lib[n]=[];
+    S.lib[n].push(t.hash); saveLib(S.lib);
+    t.name=n; S.pending=null; render(); return;
+  }
+  if(e.target.closest("[data-cancel]")){ S.taps.splice(S.pending,1); S.pending=null; render(); return; }
+  if(e.target.closest("[data-reset]")){ S.img=null; S.taps=[]; S.pending=null; render(); return; }
+  if(e.target.closest("[data-wipe]")){ S.lib={}; saveLib(S.lib); render(); return; }
+
+  var o=e.target.closest("[data-open]");
+  if(o){ S.open = S.open===o.dataset.open ? null : o.dataset.open; render(); return; }
+  var g=e.target.closest("[data-toggle]");
+  if(g){
+    if(S.tab==="draft") toggle(S.offer,g.dataset.toggle,12);
+    else toggle(S.deck,g.dataset.toggle,8);
+    render(); return;
+  }
+  if(e.target.id==="clear"){ S.offer=[]; render(); }
+});
+
+document.getElementById("view").addEventListener("input",function(e){
+  if(e.target.id==="q"){ S.q=e.target.value; render(); }
+  if(e.target.id==="lq"){ S.lq=e.target.value; render(); }
+});
+
+window.addEventListener("resize",marks);
+render();
+</script>
+</body>
+</html>
