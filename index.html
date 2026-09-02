@@ -314,6 +314,11 @@ var refState = { done:0, total:0, failed:0, running:false, why:null };
 var GW = 24, GH = 32;
 var CARD_ASPECT = 0.81;
 
+/* Which part of the in-game card is the artwork, as fractions of the
+   card box. Everything outside this is frame, elixir drop and level
+   banner, which is identical on every card. */
+var ART_X0 = 0.07, ART_X1 = 0.93, ART_Y0 = 0.04, ART_Y1 = 0.76;
+
 /* Straight pixel comparison of the artwork.
 
    Both sides are drawn into the same GW x GH grid. The reference
