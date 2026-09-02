@@ -2046,10 +2046,11 @@ document.getElementById("view").addEventListener("click",function(e){
   if(md){
     if(S.mode !== md.dataset.mode){
       S.mode = md.dataset.mode;
-      /* slot count changes with the layout, so anything pointing at a
-         slot index from the previous mode is no longer valid */
-      S.pending = null; S.lq = ""; S.open = null; S.taps = [];
-      if(S.img) readSlots();
+      /* A screenshot only makes sense for the layout it was taken
+         from: a triple draft shot cropped with the mega grid gives 36
+         pieces of empty arena. Clear it and ask for a new one. */
+      S.img = null; S.taps = []; S.pending = null;
+      S.lq = ""; S.open = null; S.assign = null;
     }
     render(); return;
   }
