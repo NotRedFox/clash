@@ -102,6 +102,11 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-of
 .grid button{display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 2px;
   background:var(--bg);border-radius:4px}
 .grid img{width:100%;max-width:56px;aspect-ratio:3/4;object-fit:contain}
+.diag{padding:0 16px 12px;display:flex;flex-direction:column;gap:10px}
+.diagCol{border-top:1px solid var(--line);padding-top:8px}
+.diagH{font-size:.62rem;letter-spacing:.08em;text-transform:uppercase;color:var(--low);margin-bottom:5px}
+.diagCol div{display:flex;justify-content:space-between;font-size:.7rem;color:var(--mid);padding:1px 0}
+.diagCol b{color:var(--ink);font-variant-numeric:tabular-nums}
 .grid span{font-size:.6rem;color:var(--mid);text-align:center;line-height:1.15}
 .opts button{display:block;width:100%;text-align:left;padding:11px 16px;font-size:.85rem;
   border-bottom:1px solid var(--line)}
@@ -508,15 +513,25 @@ function recognise(cx, cy, w, hh){
   var dmask = digitMask(S.img, cx, cy, w, hh);
   var cost  = readCost(dmask);
 
-  /* a correction on this exact art wins outright */
+  /* Screenshot library: crops of cards you have already confirmed,
+     taken from your own screenshots. Same frame, same device, same
+     rendering, so this is the closest thing to like-for-like. */
+  var seen = {};
   for(var k in S.lib){
     if(!S.lib.hasOwnProperty(k)) continue;
+    var bestSeen = 1e9;
     for(var i=0;i<S.lib[k].length;i++){
       var e=S.lib[k][i];
-      if(e && e.p && shotDist(mySig, e) < 34){
-        return { sig:mySig, dmask:dmask, name:k, ranked:[k], conf:1, scores:{} };
-      }
+      if(e && e.p) bestSeen = Math.min(bestSeen, shotDist(mySig, e));
     }
+    if(bestSeen < 1e9) seen[k] = bestSeen;
+  }
+  /* a very close screenshot match is decisive on its own */
+  var sureName=null, sureD=1e9;
+  for(var sn in seen){ if(seen[sn]<sureD){ sureD=seen[sn]; sureName=sn; } }
+  if(sureName && sureD < 26){
+    return { sig:mySig, dmask:dmask, cost:cost, name:sureName,
+             ranked:[sureName], conf:1, scores:{}, why:"screenshot" };
   }
 
   /* cost is a hard filter when it read cleanly, otherwise everything */
@@ -524,14 +539,22 @@ function recognise(cx, cy, w, hh){
     return cost === null || COST[nm] === cost;
   });
   if(pool.length < 2) pool = Object.keys(REF);
+  Object.keys(seen).forEach(function(nm){ if(pool.indexOf(nm)===-1) pool.push(nm); });
 
-  var scores={};
+  var scores={}, artOnly={};
   [[1,1],[0.93,0.93],[1.07,1.07],[1,0.93],[1,1.07]].forEach(function(kk){
     var sg = crop(kk[0], kk[1]);
     pool.forEach(function(nm){
+      if(!REF[nm]) return;
       var d = artScore(sg, REF[nm]);
-      if(scores[nm]===undefined || d<scores[nm]) scores[nm]=d;
+      if(artOnly[nm]===undefined || d<artOnly[nm]) artOnly[nm]=d;
     });
+  });
+  pool.forEach(function(nm){
+    var a = artOnly[nm]===undefined ? 999 : artOnly[nm];
+    /* a screenshot we have seen before pulls that card sharply in */
+    var s = seen[nm]===undefined ? null : seen[nm];
+    scores[nm] = (s===null) ? a : Math.min(a, s*0.55);
   });
 
   var ranked = pool.sort(function(a,b){ return scores[a]-scores[b]; });
@@ -541,7 +564,8 @@ function recognise(cx, cy, w, hh){
     conf = Math.max(0, Math.min(1, g / (scores[ranked[0]]*0.5 + 1)));
   }
   return { sig:mySig, dmask:dmask, cost:cost, name:ranked[0]||null,
-           ranked:ranked.slice(0,8), conf:conf, scores:scores };
+           ranked:ranked.slice(0,8), conf:conf, scores:scores,
+           pool:pool.length, why:"art" };
 }
 
 function loadRefs(cb){
@@ -619,7 +643,7 @@ var COST = {
 };
 
 var S = { tab:"scan", deck:[], offer:[], open:null, q:"",
-          img:null, taps:[], pending:null, lib:loadLib(), lq:"" };
+          img:null, taps:[], pending:null, diag:false, lib:loadLib(), lq:"" };
 
 function toggle(a,n,max){ var i=a.indexOf(n); if(i!==-1) a.splice(i,1); else if(a.length<max) a.push(n); }
 
@@ -698,6 +722,20 @@ function verdict(c,win,rank){
       }).join("") + '</div></div>';
 }
 
+function diagBlock(){
+  return '<div class="diag">' + S.taps.map(function(t,i){
+    var rows = (t.cands||[]).map(function(nm){
+      var v = t.scores && t.scores[nm]!==undefined ? Math.round(t.scores[nm]) : "-";
+      return '<div><span>'+esc(nm)+'</span><b>'+v+'</b></div>';
+    }).join("");
+    return '<div class="diagCol"><div class="diagH">slot '+(i+1)
+      + ' &middot; cost '+(t.cost||"?")
+      + ' &middot; '+(t.why||"-")
+      + (t.pool?' &middot; '+t.pool+' considered':'')
+      + '</div>'+rows+'</div>';
+  }).join("") + '</div>';
+}
+
 function vScan(){
   var h = '<label class="cta">Load screenshot'
     + '<input type="file" accept="image/*" id="file" style="display:none"></label>';
@@ -761,7 +799,8 @@ function readSlots(){
     /* a confident read teaches the digit library its own cost */
     if(r.name && r.conf > 0.35 && COST[r.name]) learnDigit(COST[r.name], r.dmask);
     return { x:cx, y:cy, w:w, h:hh, size:w, sig:r.sig, dmask:r.dmask,
-             name:r.name, cands:r.ranked, conf:r.conf, cost:r.cost };
+             name:r.name, cands:r.ranked, conf:r.conf, cost:r.cost,
+             scores:r.scores, why:r.why, pool:r.pool };
   });
   nextUnknown();
 }
@@ -866,6 +905,7 @@ document.getElementById("view").addEventListener("click",function(e){
     if(S.lib[n].length>6) S.lib[n].shift();
     saveLib(S.lib);
     t.name=n; nextUnknown(); render(); return; }
+  if(e.target.closest("[data-diag]")){ S.diag=!S.diag; render(); return; }
   if(e.target.closest("[data-skip]")){
     S.taps[S.pending].asked=false; S.pending=null; render(); return; }
   if(e.target.closest("[data-reset]")){ S.img=null; S.taps=[]; S.pending=null; render(); return; }
