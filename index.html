@@ -302,7 +302,7 @@ var ART = [
 ];
 
 var REF = {};              /* card -> hash, built from card art */
-var REF_KEY = "chaosRefArt_v19";
+var REF_KEY = "chaosRefArt_v20";
 var refState = { done:0, total:0, failed:0, running:false, why:null };
 
 /* Same fingerprint as the screenshot crop: the centre square of
@@ -361,8 +361,23 @@ function describe(d, withMask){
 }
 
 function refSig(img){
-  return describe(sampleRGBA(img, 0, 0, img.naturalWidth, img.naturalHeight, GW, GH), true);
+  /* The reference images are complete cards, frame and all, exactly
+     like the ones in a screenshot. So take the same artwork window
+     from both. Previously this used the whole reference image against
+     a cropped screenshot, which compared two different regions and
+     made every card score about the same. */
+  var W=img.naturalWidth, H=img.naturalHeight;
+  var d = sampleRGBA(img, W*ART_X0, H*ART_Y0,
+                          W*(ART_X1-ART_X0), H*(ART_Y1-ART_Y0), GW, GH);
+  var sig = describe(d, true);
+  /* if the art has no transparency the mask is all ones, which is
+     correct here: every cell is card, not background */
+  var any=0;
+  for(var i=0;i<sig.m.length;i++) any += sig.m[i];
+  if(any < sig.m.length*0.5) for(var j=0;j<sig.m.length;j++) sig.m[j]=1;
+  return sig;
 }
+
 function shotSig(img, x, y, w, h){
   return describe(sampleRGBA(img, x, y, w, h, GW, GH), false);
 }
@@ -726,6 +741,13 @@ function verdict(c,win,rank){
       }).join("") + '</div></div>';
 }
 
+function refCells(){
+  var k=Object.keys(REF)[0];
+  if(!k||!REF[k]||!REF[k].m) return "?";
+  var n=0; for(var i=0;i<REF[k].m.length;i++) n+=REF[k].m[i];
+  return n+"/"+REF[k].m.length;
+}
+
 function diagBlock(){
   return '<div class="diag">' + S.taps.map(function(t,i){
     var rows = (t.cands||[]).map(function(nm,j){
@@ -736,6 +758,7 @@ function diagBlock(){
       + ' &middot; cost '+(t.cost===null||t.cost===undefined?"?":t.cost)
       + ' &middot; via '+(t.why||"-")
       + ' &middot; considered '+(t.pool===undefined?"?":t.pool)
+      + ' &middot; ref cells '+refCells()
       + '</div>'+rows+'</div>';
   }).join("") + '</div>';
 }
