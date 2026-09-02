@@ -554,40 +554,32 @@ function recognise(cx, cy, w, hh){
   if(pool.length < 2) pool = Object.keys(REF);
   Object.keys(seen).forEach(function(nm){ if(pool.indexOf(nm)===-1) pool.push(nm); });
 
-  var scores={}, artOnly={};
-  /* Search a small set of windows and keep each card's best score.
-     Aspect ratio is preserved by letterboxing, which is what turned
-     a 0.2 point gap into a 29 point one in testing. */
-  var WINDOWS = [];
-  [0.00,0.04,0.08,0.12].forEach(function(y0){
-    [0.62,0.72,0.82].forEach(function(hf){
-      [0.04,0.09,0.14].forEach(function(xi){ WINDOWS.push([y0,hf,xi]); });
-    });
-  });
-
-  WINDOWS.forEach(function(win){
-    var x = cx - w/2 + w*win[2];
-    var y = cy - hh/2 + hh*win[0];
-    var sg = fitSig(S.img, x, y, w*(1-win[2]*2), hh*win[1]);
-    pool.forEach(function(nm){
-      if(!REF[nm]) return;
-      var d = colourDist(sg, REF[nm]);
-      if(artOnly[nm]===undefined || d<artOnly[nm]) artOnly[nm]=d;
-    });
-  });
-
+  /* Feature matching is the identity signal. Geometrically consistent
+     matches count most, then raw match count, then match quality.
+     Higher is better here, so scores are negated to keep the rest of
+     the pipeline sorting ascending. */
+  var A = featureSet(S.img, cx-w/2, cy-hh/2, w, hh);
+  var scores={}, detail={};
   pool.forEach(function(nm){
-    var a = artOnly[nm]===undefined ? 999 : artOnly[nm];
-    var s = seen[nm]===undefined ? null : seen[nm];
-    scores[nm] = (s===null) ? a : Math.min(a, s*0.55);
+    var rf = refFeat(nm);
+    if(!rf){ scores[nm] = 0; return; }
+    var m = matchDetail(A, rf);
+    detail[nm] = m;
+    var conf = m.geo*0.65 + m.good*0.20 + m.quality*100*0.15;
+    scores[nm] = -conf;
   });
 
   var ranked = pool.sort(function(a,b){ return scores[a]-scores[b]; });
-  var conf = 0;
-  if(ranked.length > 1){
-    var g = scores[ranked[1]] - scores[ranked[0]];
-    conf = Math.max(0, Math.min(1, g / (scores[ranked[0]]*0.5 + 1)));
+
+  /* Accept only clear winners. Weak or contested matches report low
+     confidence rather than guessing. */
+  var conf = 0, top = ranked[0], second = ranked[1];
+  if(top && detail[top]){
+    var g1 = detail[top].geo, g2 = (second && detail[second]) ? detail[second].geo : 0;
+    if(g1 >= 6 && g1 >= g2*1.8) conf = Math.min(1, g1/14);
+    else conf = Math.max(0, Math.min(0.24, g1/40));
   }
+
   return { sig:mySig, dmask:dmask, cost:cost, name:ranked[0]||null,
            ranked:ranked.slice(0,8), conf:conf, scores:scores,
            pool:pool.length, why:"art" };
@@ -877,7 +869,7 @@ function corners(gr, max){
   cand.sort(function(a,b){ return b[2]-a[2]; });
   /* spread them out, so one busy area cannot supply every point */
   var taken=[];
-  for(i=0;i<cand.length && taken.length<(max||150);i++){
+  for(i=0;i<cand.length && taken.length<(max||110);i++){
     var ok=true;
     for(var j=0;j<taken.length;j++){
       var dx=cand[i][0]-taken[j][0], dy=cand[i][1]-taken[j][1];
@@ -889,21 +881,30 @@ function corners(gr, max){
 }
 
 function brief(gr, pts){
+  /* 128 bits packed into four 32-bit words, so comparing two points
+     is four XORs and four popcounts instead of 128 comparisons. */
   var out=[];
   for(var k=0;k<pts.length;k++){
-    var px=pts[k][0], py=pts[k][1], bits=new Uint8Array(NPAIRS);
+    var px=pts[k][0], py=pts[k][1], w=new Uint32Array(4);
     for(var i=0;i<NPAIRS;i++){
       var p=BRIEF_PAIRS[i];
       var a=gr[(py+p[1])*FMW + (px+p[0])];
       var b=gr[(py+p[3])*FMW + (px+p[2])];
-      bits[i] = a < b ? 1 : 0;
+      if(a<b) w[i>>5] |= (1 << (i & 31));
     }
-    out.push(bits);
+    out.push(w);
   }
   return out;
 }
 
-function hamm(a,b){ var n=0; for(var i=0;i<a.length;i++) if(a[i]!==b[i]) n++; return n; }
+function popcnt(v){
+  v = v - ((v >> 1) & 0x55555555);
+  v = (v & 0x33333333) + ((v >> 2) & 0x33333333);
+  return (((v + (v >> 4)) & 0x0F0F0F0F) * 0x01010101) >> 24;
+}
+function hamm(a,b){
+  return popcnt(a[0]^b[0]) + popcnt(a[1]^b[1]) + popcnt(a[2]^b[2]) + popcnt(a[3]^b[3]);
+}
 
 function featureSet(img, x, y, w, h){
   var gr=grayOf(img, x, y, w, h);
