@@ -1003,25 +1003,66 @@ function recognise(cx, cy, w, hh){
 
   var N = {};
   Object.keys(raw).forEach(function(k){ N[k] = normalise(raw[k], pool, true); });
-  var fN = normalise(featRaw, pool, false);
 
-  var WEIGHTS = { spatial:0.30, palette:0.20, hist:0.15,
-                  bright:0.10, edge:0.10, feature:0.15 };
+  /* STAGE 1 — colour picks the candidates, and only the candidates.
+     Colour is good at "this looks like that" and bad at "this is
+     that", so it narrows the field and then steps back. */
+  var colourScore = {};
+  pool.forEach(function(nm){
+    colourScore[nm] = N.spatial[nm]*0.45 + N.palette[nm]*0.30
+                    + N.hist[nm]*0.15 + N.bright[nm]*0.10;
+  });
+  var shortlist = pool.slice().sort(function(a,b){
+    return colourScore[b]-colourScore[a];
+  }).slice(0, 12);
+
+  /* STAGE 2 — identity, ranked among the shortlist. Feature and
+     geometric evidence lead and may overturn a colour favourite. */
+  var fN = normalise(featRaw, shortlist, false);
+  var sN = {}, pN = {}, hN = {}, bN = {}, eN = {};
+  sN = normalise(raw.spatial, shortlist, true);
+  pN = normalise(raw.palette, shortlist, true);
+  hN = normalise(raw.hist,    shortlist, true);
+  bN = normalise(raw.bright,  shortlist, true);
+  eN = normalise(raw.edge,    shortlist, true);
+
+  /* How much the feature evidence is worth depends on how much there
+     was to work with. "feature 100, geo 1" is not the same claim as
+     "feature 100, geo 9". */
+  function kpTrust(n){ return n>=80 ? 1 : n>=50 ? 0.65 : 0.35; }
+  function geoTrust(g){ return g>=6 ? 1 : g>=4 ? 0.7 : g>=2 ? 0.35 : 0.05; }
+  var trustKp = kpTrust(kpCount);
 
   var scores={};
-  pool.forEach(function(nm){
-    var v = N.spatial[nm]*WEIGHTS.spatial
-          + N.palette[nm]*WEIGHTS.palette
-          + N.hist[nm]*WEIGHTS.hist
-          + N.bright[nm]*WEIGHTS.bright
-          + N.edge[nm]*WEIGHTS.edge
-          + fN[nm]*WEIGHTS.feature;
+  pool.forEach(function(nm){ scores[nm] = 1; });   /* off-shortlist last */
+  shortlist.forEach(function(nm){
+    var d = detail[nm] || {};
+    var g = d.geo || 0;
+    var gT = geoTrust(g);
+    var featPart = fN[nm] * trustKp;
+    var geoPart  = gT;
+
+    var v = featPart*0.35 + geoPart*0.25
+          + sN[nm]*0.15 + pN[nm]*0.10 + hN[nm]*0.05
+          + bN[nm]*0.05 + eN[nm]*0.05;
+
+    /* structure and geometry agreeing is the strongest thing we have */
+    if(fN[nm] >= 0.8 && g >= 4) v += 0.12;
+
     scores[nm] = -v;
     detail[nm].combined = v;
+    detail[nm].evidence = (g>=4 && kpCount>=50) ? "strong"
+                        : (g>=2 || kpCount>=50) ? "medium" : "weak";
     detail[nm].parts = {
-      spatial:N.spatial[nm], palette:N.palette[nm], hist:N.hist[nm],
-      bright:N.bright[nm], edge:N.edge[nm], feature:fN[nm]
+      spatial:sN[nm], palette:pN[nm], hist:hN[nm],
+      bright:bN[nm], edge:eN[nm], feature:fN[nm], colour:colourScore[nm]
     };
+  });
+  pool.forEach(function(nm){
+    if(detail[nm] && detail[nm].combined===undefined){
+      detail[nm].combined = 0;
+      detail[nm].evidence = "not shortlisted";
+    }
   });
 
   var ranked = pool.slice().sort(function(a,b){
@@ -1829,7 +1870,8 @@ function diagBlock(){
                         + ' bri '+(p.bright*100).toFixed(0)
                         + ' edge '+(p.edge*100).toFixed(0)
                         + ' feat '+(p.feature*100).toFixed(0) : '')
-                   + ' &middot; geo '+d.geo)
+                   + ' &middot; geo '+d.geo
+                   + ' &middot; ' + (d.evidence||"-"))
                 : "-";
       return '<div><span>'+(j+1)+'. '+esc(nm)+'</span><b>'+v+'</b></div>';
     }).join("") || '<div><span>no candidates</span><b>-</b></div>';
@@ -1840,6 +1882,8 @@ function diagBlock(){
       + ' &middot; rect '+Math.round(t.x-t.w/2)+','+Math.round(t.y-t.h/2)
       + ' '+Math.round(t.w)+'x'+Math.round(t.h)
       + ' &middot; kp '+(t.kp===undefined?"?":t.kp)
+      + (t.detail && t.cands && t.cands[0] && t.detail[t.cands[0]]
+          ? ' &middot; evidence '+t.detail[t.cands[0]].evidence : "")
       + ' &middot; gap '+((t.conf||0)*100).toFixed(0)
       + (t.localBest && t.global && t.localBest!==t.global
           ? ' &middot; local '+esc(t.localBest)+' &rarr; global '+esc(t.global)
