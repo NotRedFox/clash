@@ -304,7 +304,7 @@ var ART = [
 ];
 
 var REF = {};              /* card -> hash, built from card art */
-var REF_KEY = "chaosRefHashes_v11";
+var REF_KEY = "chaosRefHashes_v12";
 var refState = { done:0, total:0, failed:0, running:false };
 
 /* Same fingerprint as the screenshot crop: the centre square of
@@ -318,7 +318,7 @@ var refState = { done:0, total:0, failed:0, running:false };
    Comparing square crops was the earlier mistake: a square taken from
    a portrait card keeps a different slice depending on the source
    shape, so the two sides were never describing the same region. */
-var GW = 8, GH = 8;
+var GW = 10, GH = 10;
 
 /* Sample only the artwork, not the frame, the elixir drop or the
    level banner. Those are identical on all 74 cards, so including
@@ -545,30 +545,60 @@ function vScan(){
 }
 
 function readSlots(){
-  S.taps = SLOTS.map(function(s){
+  var slots = SLOTS.map(function(s){
     var w  = S.img.naturalWidth * s.w;
     var hh = w / CARD_ASPECT;
     var cx = S.img.naturalWidth * s.x;
     var cy = S.img.naturalHeight * s.y;
-    var x = cx - w/2, y = cy - hh/2;
     var hash = hashCrop(S.img, cx, cy, w);
-    var name = identify(hash, S.lib);
-    var cands = [];
-    if(!name){
-      var scores = {};
-      [[1,1],[0.94,0.94],[1.06,1.06],[1,0.92],[1,1.08]].forEach(function(k){
+    var learned = identify(hash, S.lib);
+
+    /* best distance to every card, over a few box sizes and both
+       with and without the frame trimmed */
+    var scores = {};
+    [[1,1],[0.94,0.94],[1.06,1.06],[1,0.92],[1,1.08]].forEach(function(k){
+      [true,false].forEach(function(trim){
         var w2=w*k[0], h2=hh*k[1];
-        var sig = gridSig(S.img, cx-w2/2, cy-h2/2, w2, h2, true);
+        var sig = gridSig(S.img, cx-w2/2, cy-h2/2, w2, h2, trim);
         for(var nm in REF){
           if(!REF.hasOwnProperty(nm)) continue;
           var d = gridDist(sig, REF[nm].s);
           if(scores[nm]===undefined || d<scores[nm]) scores[nm]=d;
         }
       });
-      cands = Object.keys(scores).sort(function(a,b){ return scores[a]-scores[b]; }).slice(0,8);
-      name = cands[0] || null;
+    });
+    var ranked = Object.keys(scores).sort(function(a,b){ return scores[a]-scores[b]; });
+    return { x:cx, y:cy, w:w, h:hh, size:w, hash:hash,
+             learned:learned, scores:scores, ranked:ranked };
+  });
+
+  /* The three offers are always different cards, so give each slot a
+     distinct name. Slots that are most sure of themselves choose
+     first, measured by the gap to their own second choice. */
+  var taken = {};
+  slots.forEach(function(s){ if(s.learned) taken[s.learned]=true; });
+
+  var order = slots.map(function(s,i){ return i; })
+    .filter(function(i){ return !slots[i].learned; })
+    .sort(function(a,b){
+      function gap(s){
+        var r=s.ranked; return r.length>1 ? s.scores[r[1]]-s.scores[r[0]] : 0;
+      }
+      return gap(slots[b]) - gap(slots[a]);
+    });
+
+  order.forEach(function(i){
+    var s = slots[i];
+    for(var j=0;j<s.ranked.length;j++){
+      if(!taken[s.ranked[j]]){ s.pick = s.ranked[j]; taken[s.pick]=true; return; }
     }
-    return {x:cx, y:cy, w:w, h:hh, size:w, hash:hash, name:name, cands:cands};
+    s.pick = s.ranked[0];
+  });
+
+  S.taps = slots.map(function(s){
+    return { x:s.x, y:s.y, w:s.w, h:s.h, size:s.size, hash:s.hash,
+             name: s.learned || s.pick || null,
+             cands: s.ranked.slice(0,8) };
   });
   nextUnknown();
 }
