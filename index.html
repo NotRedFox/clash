@@ -776,6 +776,15 @@ function globalAssign(){
   });
   Object.keys(dupBefore).forEach(function(k){ if(dupBefore[k]>1) dupCount+=dupBefore[k]-1; });
 
+  var totalLocal=0, totalGlobal=0;
+  slots.forEach(function(t,i){
+    var d0=t.detail && t.detail[t.name];
+    totalLocal += d0 ? (d0.combined||0) : 0;
+    var pk=cards[res[i]];
+    var d1=t.detail && t.detail[pk];
+    totalGlobal += d1 ? (d1.combined||0) : 0;
+  });
+
   var changed=0;
   slots.forEach(function(t,i){
     var pick=cards[res[i]];
@@ -784,7 +793,8 @@ function globalAssign(){
     if(pick && pick!==t.name){ t.name=pick; changed++; }
     t.global=pick;
   });
-  S.assign={ dupCount:dupCount, changed:changed, cards:cards.length };
+  S.assign={ dupCount:dupCount, changed:changed, cards:cards.length,
+             totalLocal:totalLocal, totalGlobal:totalGlobal };
 }
 
 /* ── one recognition path ──────────────────────────────────────── */
@@ -987,7 +997,7 @@ var COST = {
 };
 
 var S = { tab:"scan", deck:[], offer:[], open:null, q:"",
-          img:null, taps:[], pending:null, diag:false, mode:"triple", unique:false, lib:loadLib(), lq:"" };
+          img:null, taps:[], pending:null, diag:false, mode:"triple", unique:true, lib:loadLib(), lq:"" };
 
 function toggle(a,n,max){ var i=a.indexOf(n); if(i!==-1) a.splice(i,1); else if(a.length<max) a.push(n); }
 
@@ -1608,13 +1618,26 @@ function vScan(){
         + ';text-decoration:underline;padding:0">'
         + (S.unique?"global assignment on":"global assignment off")+'</button>'
         + (S.assign ? ' &middot; duplicate local winners '+S.assign.dupCount
-            + ' &middot; changed by assignment '+S.assign.changed
-            + ' &middot; candidate cards '+S.assign.cards : '')
+            + ' &middot; changed '+S.assign.changed
+            + ' &middot; candidates '+S.assign.cards
+            + ' &middot; total local '+(S.assign.totalLocal*100).toFixed(0)
+            + ' &middot; total global '+(S.assign.totalGlobal*100).toFixed(0) : '')
         + '</div>'
       : "";
     var regionLine = '<div class="meta" style="padding:0 16px 6px">mode '+esc(S.mode)
       + ' &middot; screen cards ' + S.taps.length + ' &middot; library '
       + Object.keys(REF).length + '</div>';
+    var bestSlot = -1, bestCard = null, bestRating = -1;
+    S.taps.forEach(function(t,i){
+      if(!t.name) return;
+      var cc = byName(t.name);
+      if(cc && cc.avg > bestRating){ bestRating = cc.avg; bestCard = t.name; bestSlot = i; }
+    });
+    h += '<div class="meta" style="padding:0 16px 6px">take this &middot; slot '
+      + (bestSlot+1) + ' &middot; ' + esc(bestCard||"-")
+      + ' &middot; rating ' + (bestRating<0?"-":Math.round(bestRating))
+      + ' &middot; confidence ' + (bestSlot>=0
+          ? ((S.taps[bestSlot].conf||0)*100).toFixed(0) : "-") + '</div>'
     h += '<div class="eyebrow">Best to worst &middot; tap a name to correct'
       + (lowest < 0.25 ? ' &middot; low confidence' : '') + '</div>'
       + thin + uniqLine + regionLine
