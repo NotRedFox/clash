@@ -145,83 +145,82 @@ function isGood(v){ return v >= 52; }
 var R = ["common","rare","epic"];
 
 var RAW = [
-["Skeleton Barrel", ["Barry Barrel", 67], ["Big Boned", 85], ["99 Blue Balloons", 66]],
-["Royal Hogs", ["BBQ Season", 81], ["Hog...Riders?", 77], ["Hog Dynasty", 56]],
-["Goblin Barrel", ["Cannonball!", 74], ["Double Barrel", 36], ["Muscle Mates", 88]],
-["Golem", ["Paint It Pink!", 51], ["Twin Tanks", 73], ["Not Today!", 71]],
-["Goblin Hut", ["ALARM!", 37], ["No Party Like a Goblin Party", 75], ["Bombs Away!", 78]],
-["Fireball", ["Scorched Earth", 50], ["Stop, Drop & Roll", 68], ["Meteor Shower", 64]],
-["Goblin Drill", ["Gum Galore", 85], ["Always Workin'", 37], ["Drill, Baby, Drill!", 58]],
-["Suspicious Bush", ["If One Goes, We ALL Go", 50], ["Looks Fine to Me!", 41], ["Always Look in the Bush!", 83]],
-["Skeleton Army", ["Restless Dead", 40], ["Skeletrooper Brigade", 88], ["Undying Hordes", 43]],
-["Barbarian Barrel", ["Just Keep Rollin'", 42], ["Barrel Barrel Barrel", 47], ["Barbarian Recruits", 80]],
-["Vines", ["All Tangled Up", 47], ["Jungle Fever", 45], ["Entangling Endeavor", 77]],
-["Goblin Demolisher", ["Go the Distance", 87], ["Skippin' Bombs Like Stones", 42], ["Explosions Everywhere", 39]],
-["Poison", ["The Poison & the Hare", 59], ["Bigger & Better", 67], ["No Escape", 41]],
-["Knight", ["Truly of the Round Table", 71], ["An Absolute Stunner", 36], ["Not This Guy Again!", 52]],
-["Barbarian Hut", ["Best of Both Barbs", 43], ["Extra Elitists", 54], ["Well, ****!", 60]],
-["Musketeer", ["Shots Fired!", 54], ["Realllllllllllly Long Range", 67], ["#Girlbosses", 34]],
-["Ronin", ["Cool It!", 38], ["Monastery Training", 71], ["Way of the Blade", 40]],
-["Electro Wizard", ["Zip Zap Zop", 42], ["Quadruple Ruple", 65], ["Hands of Lightning", 42]],
-["The Log", ["goL ehT gnaremooB", 45], ["The Loooooooog", 26], ["Chop! Chop!", 76]],
-["Rascals", ["Just a Giggle of Girls", 42], ["Gorgeous Groupies", 43], ["Callin' in the Bosses", 56]],
-["Firecracker", ["Jump! Jump! Jump Around!", 43], ["Furious Fireworks", 46], ["A Pack of the Clones", 52]],
-["Berserker", ["Beatdown Boulevard", 35], ["Don't Get in Her Way", 69], ["Mutilation Meditation", 34]],
-["Arrows", ["Block Out the Sun", 52], ["Set Their Tower Ablaze", 27], ["Reign of Arrows", 59]],
-["Baby Dragon", ["Baby Fly, Fly, Fly", 29], ["Gargantuan Flameballs", 68], ["Baby's Got a Baby!", 40]],
-["Graveyard", ["Undead Again", 24], ["Go! Go! Go!", 47], ["They're Skeverywhere!", 64]],
-["Mega Knight", ["Power Jump", 33], ["Ultra Mega Power Jump", 67], ["Mega PUNCH", 34]],
-["Zappies", ["Zippy Zappies", 52], ["Zap Zep Zip Zop & Zup", 33], ["The Sparky Sparkles!", 47]],
-["Giant", ["2 Fast 4 You", 39], ["Large & In Charge", 60], ["World's Largest Barrel", 29]],
-["Wizard", ["Fury o' Flames", 37], ["INCOMING!", 47], ["Zap! Ouch! Brrr!", 40]],
-["Goblin Giant", ["Javelin Junkies", 22], ["Mean & Green", 44], ["Elec-trick-tians", 55]],
-["Executioner", ["Stronger Than Ever", 51], ["Let's Axe a Dud!", 32], ["Axed with the Wind", 36]],
-["Flying Machine", ["Bada Bing, Bada Boom!", 50], ["Paragob Pursuit", 30], ["Beam Me Up, Barb", 39]],
-["Tombstone", ["Double Dead", 32], ["Spawned Siege", 34], ["Tomb of the King", 48]],
-["Bandit", ["Long Distance Runner", 33], ["Dashing Spree", 24], ["Echo Dash", 55]],
-["P.E.K.K.A", ["2 Fast 2 Ferocious", 31], ["Miniature P.E.K.K.As", 36], ["Dig Deep", 44]],
-["Witch", ["Speedy Spawn", 37], ["On Guard!", 54], ["Skelebrate Good Times", 19]],
-["Night Witch", ["Barely Haunted Bats", 35], ["Purple Please!", 24], ["DUCK...no...BATS!", 51]],
-["Inferno Dragon", ["The Burninator", 48], ["Bad Breath", 38], ["Arenageddon", 23]],
-["Furnace", ["Never Put Out Your Flame", 37], ["So Many Spirits!", 45], ["Semifunctional Furnace", 25]],
-["Princess", ["Quickdraw", 42], ["Royal Ranger", 29], ["Pierce the Tower", 35]],
-["Zap", ["E.M.P", 37], ["Storm Strike", 28], ["Gotta Zap 'Em All", 41]],
-["Three Musketeers", ["d'Artagnan", 38], ["Last Stand", 18], ["New Recruits", 49]],
-["Heal Spirit", ["Free Spirit", 24], ["Giveth and Taketh", 24], ["Spirit Rain", 54]],
-["Mortar", ["On the Up & Up", 30], ["Be the Boulder", 53], ["A Mystical Mystery", 19]],
-["Tesla", ["Arc Reaction", 50], ["Sap Zap", 23], ["Goblinstein's Revenge", 29]],
-["Dart Goblin", ["Speedy Goblinez", 40], ["Call Him Darcher", 19], ["Shocking Gum", 36]],
-["Electro Spirit", ["Sentient & Spirited", 37], ["Zap, Glorious Zap", 24], ["Don't Look Directly at It", 31]],
-["Mother Witch", ["I Double Hog Dare You", 38], ["KA! BOOM!", 20], ["The Mother Curse", 34]],
-["Elite Barbarians", ["Rage-Tipped Spears", 26], ["Brothers in Arms and Legs", 20], ["Royal Nesting Barbs", 44]],
-["Hunter", ["Shoot Your Shot", 22], ["Ambush", 21], ["Burn Baby Burn!", 46]],
-["Rune Giant", ["Stronger & STRONGER", 31], ["Ain't Babies, That's for Sure", 36], ["See Ya, Sucka!", 22]],
-["Ice Spirit", ["Ice, Ice, Ice, Baby!", 34], ["To Thaw or Not to Thaw", 26], ["No Finger Left Unfrozen", 29]],
-["Inferno Tower", ["Don't Hold Back", 28], ["I Triple Dog Dare You", 22], ["The Unbalanced Beam", 37]],
-["Royal Delivery", ["Evo Delivery", 20], ["Here, There, Anywhere!", 31], ["Random Delivery", 34]],
-["Ram Rider", ["CHAAAARGE!", 21], ["Tie Me Down", 27], ["Battering Net", 36]],
-["Ice Wizard", ["Splashy Entrance", 21], ["Inspired by Snails", 19], ["Simon Says: Freeze!", 33]],
-["Rocket", ["Bouncing Bomb", 28], ["Party On, Goblin!", 25], ["Rocket, Destroyer of Towers", 20]],
-["Royal Giant", ["Splish Splash Splosh", 17], ["Look Out, Over There!", 31], ["Let Loose the Hogs of War", 24]],
-["Lava Hound", ["Super Troops", 24], ["Burn Book Business", 20], ["Like Bunnies", 27]],
-["Elixir Golem", ["Gooey Golemites", 20], ["Give Some, Get Some", 32], ["From Blob to Glob", 17]],
-["Dark Prince", ["Swift Charge", 23], ["Shake It Off", 17], ["Darling, I'm a Nightmare", 29]],
-["X-Bow", ["Radical Range", 29], ["Magically Miniscule", 8], ["Shockingly Short", 29]],
-["Valkyrie", ["More Momentum", 19], ["She's the Axpert", 27], ["Spin To Win", 20]],
-["Fisherman", ["Tough as Scales", 28], ["Down to Earth", 15], ["Hook Me Baby One More Time", 20]],
-["Rage", ["Raging Rage", 22], ["Just Superhero Stuff", 20], ["Keep Calm & Rage On", 21]],
-["Giant Snowball", ["Practically Glacial", 20], ["Get Outta Here!", 15], ["Snowball Fight!", 26]]
+["Skeleton Barrel", ["Barry Barrel", "Balloon Bomber spawns on defeat", 67], ["Big Boned", "Giant Skeleton Balloon", 85], ["99 Blue Balloons", "x11 3-Skeleton Balloons in waves", 66]],
+["Royal Hogs", ["BBQ Season", "Hogs explode on defeat", 81], ["Hog...Riders?", "Mounted Archers dismount on defeat", 77], ["Hog Dynasty", "4 Hog Riders split into Royal Hogs", 56]],
+["Goblin Barrel", ["Cannonball!", "Impact damage", 74], ["Double Barrel", "x2 barrels", 36], ["Muscle Mates", "3 Goblin Brawlers", 88]],
+["Golem", ["Paint It Pink!", "Returns 4 Elixir on defeat", 51], ["Twin Tanks", "Double Golem on defeat", 73], ["Not Today!", "Deflects projectiles", 71]],
+["Goblin Hut", ["ALARM!", "+100% spawn range", 37], ["No Party Like a Goblin Party", "Goblin Party Hut", 75], ["Bombs Away!", "Spawn Goblin Demolishers", 78]],
+["Fireball", ["Scorched Earth", "Leaves ground burning", 50], ["Stop, Drop & Roll", "Tornado Fireball combo", 68], ["Meteor Shower", "Super Fireball splits on impact", 64]],
+["Goblin Drill", ["Gum Galore", "Spawn Dart Goblin", 85], ["Always Workin'", "Infinite Drill lifetime", 37], ["Drill, Baby, Drill!", "More Drills", 58]],
+["Suspicious Bush", ["If One Goes, We ALL Go", "Vines on reveal", 50], ["Looks Fine to Me!", "+2 Bush Goblins", 41], ["Always Look in the Bush!", "4 Goblin Brawlers", 83]],
+["Skeleton Army", ["Restless Dead", "Graveyard on deploy", 40], ["Skeletrooper Brigade", "Skeletrooper Army from King Tower", 88], ["Undying Hordes", "Infinite Skeleton Army", 43]],
+["Barbarian Barrel", ["Just Keep Rollin'", "+200% range", 42], ["Barrel Barrel Barrel", "Triple the Barbarians", 47], ["Barbarian Recruits", "x6 Barbarian Barrels across the arena", 80]],
+["Vines", ["All Tangled Up", "+100% radius, x2 targets", 47], ["Jungle Fever", "+1 Suspicious Bush", 45], ["Entangling Endeavor", "Infinite roots", 77]],
+["Goblin Demolisher", ["Go the Distance", "+150% range", 87], ["Skippin' Bombs Like Stones", "Bouncing attack", 42], ["Explosions Everywhere", "Bomb trail", 39]],
+["Poison", ["The Poison & the Hare", "+150% enemy slowdown", 59], ["Bigger & Better", "Increasing radius and damage", 67], ["No Escape", "Permanent Poison", 41]],
+["Knight", ["Truly of the Round Table", "+200% hitpoints, -50% speed", 71], ["An Absolute Stunner", "Stun attack", 36], ["Not This Guy Again!", "Spawn Mega Knight", 52]],
+["Barbarian Hut", ["Best of Both Barbs", "+100% spawn rate", 43], ["Extra Elitists", "Spawns Elite Barbarians", 54], ["Well, ****!", "Mini Mega Knight Hut", 60]],
+["Musketeer", ["Shots Fired!", "Spread shot", 54], ["Realllllllllllly Long Range", "+100% range", 67], ["#Girlbosses", "2 Elite Musketeers", 34]],
+["Ronin", ["Cool It!", "Reduced parry cooldown", 38], ["Monastery Training", "Deflects projectiles when parry ready", 71], ["Way of the Blade", "Parry enrages allies for 5s", 40]],
+["Electro Wizard", ["Zip Zap Zop", "+3 Electro Spirits", 42], ["Quadruple Ruple", "Chain attack 5 enemies", 65], ["Hands of Lightning", "Attacks spawn Lightning", 42]],
+["The Log", ["goL ehT gnaremooB", "Boomerang The Log", 45], ["The Loooooooog", "Extreme range", 26], ["Chop! Chop!", "Spawn Lumberjack", 76]],
+["Rascals", ["Just a Giggle of Girls", "Extra Rascal Girls", 42], ["Gorgeous Groupies", "Spawn Giant and Rascal Girls", 43], ["Callin' in the Bosses", "Spawn Boss Bandit and reinforcements", 56]],
+["Firecracker", ["Jump! Jump! Jump Around!", "Increased recoil, plus a jump", 43], ["Furious Fireworks", "Secondary shots split again", 46], ["A Pack of the Clones", "Each attack clones Firecracker", 52]],
+["Berserker", ["Beatdown Boulevard", "+200% hit speed", 35], ["Don't Get in Her Way", "Dash attack", 69], ["Mutilation Meditation", "Heal on attack", 34]],
+["Arrows", ["Block Out the Sun", "Double volley", 52], ["Set Their Tower Ablaze", "Mini Fireball arrows", 27], ["Reign of Arrows", "Also spawns Archer Queen", 59]],
+["Baby Dragon", ["Baby Fly, Fly, Fly", "+200% movement speed", 29], ["Gargantuan Flameballs", "Fireball attacks", 68], ["Baby's Got a Baby!", "Egg spawns Evo Dragon", 40]],
+["Graveyard", ["Undead Again", "More Skeletons", 24], ["Go! Go! Go!", "Spawn Guards", 47], ["They're Skeverywhere!", "Random Skeleton troops", 64]],
+["Mega Knight", ["Power Jump", "+100% jump attack damage", 33], ["Ultra Mega Power Jump", "Unlimited jump attacks", 67], ["Mega PUNCH", "Evo MK uppercut yeets troops", 34]],
+["Zappies", ["Zippy Zappies", "+100% hit speed", 52], ["Zap Zep Zip Zop & Zup", "+2 Zappies", 33], ["The Sparky Sparkles!", "Spawn Mini Sparkies", 47]],
+["Giant", ["2 Fast 4 You", "+300% movement speed", 39], ["Large & In Charge", "Charging Giant", 60], ["World's Largest Barrel", "Giant Barrel", 29]],
+["Wizard", ["Fury o' Flames", "Increased splash radius", 37], ["INCOMING!", "Fireball attack", 47], ["Zap! Ouch! Brrr!", "Spawn Wizard Trio", 40]],
+["Goblin Giant", ["Javelin Junkies", "+100% spear range", 22], ["Mean & Green", "Spawn Giant Goblin", 44], ["Elec-trick-tians", "Sparky Spear Goblins", 55]],
+["Executioner", ["Stronger Than Ever", "+100% hitpoints", 51], ["Let's Axe a Dud!", "x4 axes", 32], ["Axed with the Wind", "Tornado axe", 36]],
+["Flying Machine", ["Bada Bing, Bada Boom!", "+100% hit speed", 50], ["Paragob Pursuit", "Spawn Goblins", 30], ["Beam Me Up, Barb", "Inferno beam attack", 39]],
+["Tombstone", ["Double Dead", "x2 Skeletons", 32], ["Spawned Siege", "Spawn Wall Breakers", 34], ["Tomb of the King", "Spawn Guards and Skeleton King", 48]],
+["Bandit", ["Long Distance Runner", "+200% dash distance", 33], ["Dashing Spree", "Chain dash on final hit", 24], ["Echo Dash", "Dash clones Bandit per enemy in range", 55]],
+["P.E.K.K.A", ["2 Fast 2 Ferocious", "+200% movement speed", 31], ["Miniature P.E.K.K.As", "3 Mini P.E.K.K.As", 36], ["Dig Deep", "Deploy anywhere", 44]],
+["Witch", ["Speedy Spawn", "+100% spawn speed", 37], ["On Guard!", "Spawn Guards", 54], ["Skelebrate Good Times", "Spawn Evo Skeletons", 19]],
+["Night Witch", ["Barely Haunted Bats", "+6 Bats on defeat", 35], ["Purple Please!", "Spawn Evo Bats", 24], ["DUCK...no...BATS!", "Spawn swarm of Bats", 51]],
+["Inferno Dragon", ["The Burninator", "Increased attack speed", 48], ["Bad Breath", "+200% range", 38], ["Arenageddon", "Damages ALL units when charged", 23]],
+["Furnace", ["Never Put Out Your Flame", "+400% Fire Spirit range", 37], ["So Many Spirits!", "Spawn every Spirit", 45], ["Semifunctional Furnace", "Furnace doesn't move", 25]],
+["Princess", ["Quickdraw", "+100% hit speed", 42], ["Royal Ranger", "+55% range", 29], ["Pierce the Tower", "Arrows attack", 35]],
+["Zap", ["E.M.P", "Reduces enemy levels by 3", 37], ["Storm Strike", "Also strikes highest HP troop", 28], ["Gotta Zap 'Em All", "Chain Zap", 41]],
+["Three Musketeers", ["d'Artagnan", "4 Musketeers", 38], ["Last Stand", "Defeat buffs surviving Musketeers", 18], ["New Recruits", "Enemy defeat spawns Mini Musketeer", 49]],
+["Heal Spirit", ["Free Spirit", "Deploy anywhere", 24], ["Giveth and Taketh", "Heal AOE also damages enemies", 24], ["Spirit Rain", "New Spirit spawns on jump, up to 3x", 54]],
+["Mortar", ["On the Up & Up", "+200% hit speed", 30], ["Be the Boulder", "Barbarian launcher", 53], ["A Mystical Mystery", "Invisible Mortar", 19]],
+["Tesla", ["Arc Reaction", "Attack chains up to 4x", 50], ["Sap Zap", "Attack stuns and reduces level by 1", 23], ["Goblinstein's Revenge", "Spawns Dr. Goblinstein on defeat", 29]],
+["Dart Goblin", ["Speedy Goblinez", "+100% hit speed", 40], ["Call Him Darcher", "Magic Archer darts", 19], ["Shocking Gum", "Sparky darts", 36]],
+["Electro Spirit", ["Sentient & Spirited", "3 Electro Spirits", 37], ["Zap, Glorious Zap", "Zaps all units", 24], ["Don't Look Directly at It", "Chain Lightning", 31]],
+["Mother Witch", ["I Double Hog Dare You", "Double Hogs", 38], ["KA! BOOM!", "Hogs curse on defeat", 20], ["The Mother Curse", "Spawn Mother Witch", 34]],
+["Elite Barbarians", ["Rage-Tipped Spears", "Permanently raged", 26], ["Brothers in Arms and Legs", "Both level up when enemy defeated", 20], ["Royal Nesting Barbs", "EBarbs split on defeat (x2)", 44]],
+["Hunter", ["Shoot Your Shot", "+100% shot range", 22], ["Ambush", "Invisible when not attacking", 21], ["Burn Baby Burn!", "Flamethrower attack", 46]],
+["Rune Giant", ["Stronger & STRONGER", "Better buff", 31], ["Ain't Babies, That's for Sure", "+2 Berserkers", 36], ["See Ya, Sucka!", "Everything buffed", 22]],
+["Ice Spirit", ["Ice, Ice, Ice, Baby!", "3 Ice Spirits", 34], ["To Thaw or Not to Thaw", "5 second freeze", 26], ["No Finger Left Unfrozen", "Blizzard attack", 29]],
+["Inferno Tower", ["Don't Hold Back", "-100% charge time", 28], ["I Triple Dog Dare You", "x3 targets", 22], ["The Unbalanced Beam", "Max beam damage", 37]],
+["Royal Delivery", ["Evo Delivery", "Evo Recruit delivery", 20], ["Here, There, Anywhere!", "Place anywhere", 31], ["Random Delivery", "Spawn a random unit", 34]],
+["Ram Rider", ["CHAAAARGE!", "+100% charge damage", 21], ["Tie Me Down", "Hunter net attack", 27], ["Battering Net", "Battle Ram and Hunter net abilities", 36]],
+["Ice Wizard", ["Splashy Entrance", "+300% deploy splash", 21], ["Inspired by Snails", "Permanent slowdown", 19], ["Simon Says: Freeze!", "Freeze attacks", 33]],
+["Rocket", ["Bouncing Bomb", "Bouncy Rocket", 28], ["Party On, Goblin!", "Goblin payload", 25], ["Rocket, Destroyer of Towers", "Many Rockets", 20]],
+["Royal Giant", ["Splish Splash Splosh", "Splash damage", 17], ["Look Out, Over There!", "+200% range", 31], ["Let Loose the Hogs of War", "Royal Hog projectile", 24]],
+["Lava Hound", ["Super Troops", "+500% hit speed", 24], ["Burn Book Business", "+6 Fire Spirits on defeat", 20], ["Like Bunnies", "Continuous Lava Pups", 27]],
+["Elixir Golem", ["Gooey Golemites", "+2 Elixir Golemites", 20], ["Give Some, Get Some", "Get Elixir when defeated", 32], ["From Blob to Glob", "Evolving Blobs", 17]],
+["Dark Prince", ["Swift Charge", "-50% charge time", 23], ["Shake It Off", "Shield resets after enemy defeat", 17], ["Darling, I'm a Nightmare", "Charge summons swarm of Bats", 29]],
+["X-Bow", ["Radical Range", "+50% range", 29], ["Magically Miniscule", "Piercing attacks, shorter lifetime", 8], ["Shockingly Short", "Sparky attacks, shorter lifetime", 29]],
+["Valkyrie", ["More Momentum", "Consecutive attacks speed her up", 19], ["She's the Axpert", "Throws axe at ranged attackers", 27], ["Spin To Win", "Enemy defeat triggers whirlwind", 20]],
+["Fisherman", ["Tough as Scales", "+100% hitpoints", 28], ["Down to Earth", "Hook air troops", 15], ["Hook Me Baby One More Time", "Infinite hook range", 20]],
+["Rage", ["Raging Rage", "Stronger rage", 22], ["Just Superhero Stuff", "Super Rage buff", 20], ["Keep Calm & Rage On", "Longer rage", 21]],
+["Giant Snowball", ["Practically Glacial", "+300% slow duration", 20], ["Get Outta Here!", "+300% knockback", 15], ["Snowball Fight!", "5 Evo Snowballs", 26]]
 ];
 var UNCAT = ["Bomber", "Mini P.E.K.K.A", "Prince", "Hog Rider", "Fire Spirit", "Miner", "Skeletons", "Goblins"];
-
 
 var CARDS = RAW.map(function(x){
   return {
     card:x[0],
-    common:{n:x[1][0], v:x[1][1]},
-    rare:  {n:x[2][0], v:x[2][1]},
-    epic:  {n:x[3][0], v:x[3][1]},
-    avg:(x[1][1]+x[2][1]+x[3][1])/3
+    common:{n:x[1][0], e:x[1][1], v:x[1][2]},
+    rare:  {n:x[2][0], e:x[2][1], v:x[2][2]},
+    epic:  {n:x[3][0], e:x[3][1], v:x[3][2]},
+    avg:(x[1][2]+x[2][2]+x[3][2])/3
   };
 });
 UNCAT.forEach(function(n){ CARDS.push({card:n, common:null, avg:0}); });
@@ -237,9 +236,9 @@ var HW=9, HH=8, THRESH=12, LIB_KEY="chaosCardHashes";
 
 /* The card row sits in the same place on every screenshot. */
 var SLOTS = [
-  {x:0.213, y:0.531, w:0.25},
-  {x:0.500, y:0.531, w:0.25},
-  {x:0.787, y:0.531, w:0.25}
+  {x:0.213, y:0.520, w:0.25},
+  {x:0.500, y:0.520, w:0.25},
+  {x:0.787, y:0.520, w:0.25}
 ];
 
 function loadLib(){ try{ return JSON.parse(localStorage.getItem(LIB_KEY))||{}; }catch(e){ return {}; } }
@@ -267,7 +266,7 @@ function identify(h,lib){
   var rb=null, rd=999;
   for(var n in REF){ if(!REF.hasOwnProperty(n)) continue;
     var dd=ham(h,REF[n]); if(dd<rd){ rd=dd; rb=n; } }
-  return rd <= 18 ? rb : null;
+  return rd <= 20 ? rb : null;
 }
 
 
@@ -301,14 +300,13 @@ var ART = [
 ];
 
 var REF = {};              /* card -> hash, built from card art */
-var REF_KEY = "chaosRefHashes_v2";
+var REF_KEY = "chaosRefHashes_v3";
 var refState = { done:0, total:0, failed:0, running:false };
 
 /* Same fingerprint as the screenshot crop: the centre square of
    the artwork, so both sides see the same shape. */
 function hashImageCentre(img){
-  var s = Math.min(img.naturalWidth, img.naturalHeight) * 0.78;
-  return hashCrop(img, img.naturalWidth/2, img.naturalHeight*0.46, s);
+  return hashCrop(img, img.naturalWidth/2, img.naturalHeight*0.5, img.naturalWidth);
 }
 
 function loadRefs(cb){
