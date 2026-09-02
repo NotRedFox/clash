@@ -1940,6 +1940,12 @@ function vScan(){
             + ' &middot; total global '+(S.assign.totalGlobal*100).toFixed(0) : '')
         + '</div>'
       : "";
+    var summaryLine = '<div class="meta" style="padding:0 16px 6px">'
+      + esc(S.mode) + ' &middot; ' + S.taps.length + ' slots &middot; '
+      + S.taps.map(function(t){
+          return esc(t.name||"?") + ' ' + ((t.conf||0)*100).toFixed(0);
+        }).join(', ')
+      + '</div>';
     var regionLine = '<div class="meta" style="padding:0 16px 6px">mode '+esc(S.mode)
       + ' &middot; screen cards ' + S.taps.length + ' &middot; library '
       + Object.keys(REF).length + '</div>';
@@ -1956,7 +1962,7 @@ function vScan(){
           ? ((S.taps[bestSlot].conf||0)*100).toFixed(0) : "-") + '</div>'
     h += '<div class="eyebrow">Best to worst &middot; tap a name to correct'
       + (lowest < 0.25 ? ' &middot; low confidence' : '') + '</div>'
-      + thin + uniqLine + regionLine
+      + summaryLine + thin + uniqLine + regionLine
       + '<div class="meta" style="padding:0 16px 8px">elixir read: '+esc(costs)+'</div>'
       + diagBlock()
       + '<div class="list">'
