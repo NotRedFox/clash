@@ -1875,15 +1875,12 @@ function vScan(){
     var rk = known.map(function(t){ return byName(t.name); })
                   .filter(Boolean)
                   .sort(function(a,b){ return b.avg-a.avg; });
-    /* Mega boards show far too many cards to read in three seconds,
-       so only the eight best are worth surfacing. */
-    var limit = rk.length > 8 ? 8 : rk.length;
-    var shown = rk.slice(0, limit);
-    h += '<div class="eyebrow">'
-      + (rk.length > 8 ? 'Top 8 of ' + rk.length : 'Best to worst')
-      + ' &middot; tap a name to correct</div>'
-      + '<div class="list">'
-      + shown.map(function(c,i){ return verdict(c, i===0 && shown.length>1); }).join("")
+    /* Show a decent list, but only mark the top eight as worth
+       taking. Below that the ratings drop off enough that they are
+       reference rather than recommendation. */
+    var shown = rk.slice(0, 20);
+    h += '<div class="list">'
+      + shown.map(function(c,i){ return verdict(c, i < 8 && shown.length > 1); }).join("")
       + '</div>';
   }
 
