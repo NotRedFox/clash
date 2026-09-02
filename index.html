@@ -61,9 +61,10 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-of
 .stat{display:flex;align-items:flex-end;justify-content:space-between;padding:6px 16px 18px}
 .big{font-size:2.6rem;font-weight:800;line-height:.9;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
 .statLbl{font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;color:var(--low)}
-.wave{display:grid;grid-template-columns:14px 1fr 34px;gap:11px;align-items:center;
+.wave{display:grid;grid-template-columns:82px 1fr 34px;gap:11px;align-items:center;
   padding:9px 16px;border-bottom:1px solid var(--line)}
-.wn{font-size:.72rem;font-weight:700;color:var(--mid);font-variant-numeric:tabular-nums}
+.wn{font-size:.72rem;font-weight:700;color:var(--mid);white-space:nowrap}
+.wn small{color:var(--low);font-weight:400;font-variant-numeric:tabular-nums}
 .trk{height:6px;background:var(--surface)}
 .fil{height:100%;background:var(--acc);transition:width .25s}
 .wp{font-size:.78rem;font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
@@ -1961,7 +1962,7 @@ function vDeck(){
       if(!w[r]) return;
       pw += w[r] * (cs.filter(function(c){ return !isGood(c[r].v); }).length/cs.length);
     });
-    return {n:w.n, p:1-pw*pw};
+    return {n:w.n, clock:w.clock, p:1-pw*pw};
   });
   return '<div class="stat"><div><div class="big">'+Math.round(avg)+'</div>'
     + '<div class="statLbl">deck rating</div></div>'
@@ -1970,7 +1971,8 @@ function vDeck(){
     + '<div class="eyebrow">Odds of a strong offer</div>'
     + '<div style="border-top:1px solid var(--line)">'
     + odds.map(function(w){
-        return '<div class="wave"><span class="wn">'+w.n+'</span>'
+        return '<div class="wave"><span class="wn">Wave '+w.n
+          + ' <small>'+w.clock+'</small></span>'
           + '<div class="trk"><div class="fil" style="width:'+(w.p*100)+'%"></div></div>'
           + '<span class="wp">'+Math.round(w.p*100)+'</span></div>';
       }).join("")+'</div>'
