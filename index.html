@@ -819,6 +819,142 @@ function fitSig(img, x, y, w, h){
 }
 
 
+
+/* ── keypoint feature matching ──────────────────────────────────
+   Instead of comparing pixel (x,y) to pixel (x,y), find distinctive
+   corners in each image, describe the pattern of brightness around
+   them, and count how many descriptions match. Tolerant of scale,
+   shift and framing, which is what defeated the grid comparisons.
+
+   A compact FAST-style corner detector with BRIEF descriptors. No
+   library, no training, no labelling. */
+var FMW = 128, FMH = 160, NPAIRS = 128, PATCH = 13;
+
+var BRIEF_PAIRS = (function(){
+  /* deterministic pseudo-random offsets so both sides use the same */
+  var s = 12345, out = [];
+  function rnd(){ s = (s*1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; }
+  for(var i=0;i<NPAIRS;i++){
+    out.push([
+      Math.round((rnd()-0.5)*PATCH), Math.round((rnd()-0.5)*PATCH),
+      Math.round((rnd()-0.5)*PATCH), Math.round((rnd()-0.5)*PATCH)
+    ]);
+  }
+  return out;
+})();
+
+function grayOf(img, x, y, w, h){
+  var c=document.createElement("canvas"); c.width=FMW; c.height=FMH;
+  var g=c.getContext("2d",{willReadFrequently:true});
+  g.fillStyle="#000"; g.fillRect(0,0,FMW,FMH);
+  var s=Math.min(FMW/w, FMH/h), dw=w*s, dh=h*s;
+  g.drawImage(img, x, y, w, h, (FMW-dw)/2, (FMH-dh)/2, dw, dh);
+  var d=g.getImageData(0,0,FMW,FMH).data, out=new Float32Array(FMW*FMH);
+  for(var i=0;i<FMW*FMH;i++) out[i]=0.299*d[i*4]+0.587*d[i*4+1]+0.114*d[i*4+2];
+  return out;
+}
+
+function corners(gr, max){
+  var R=3, pts=[], i, x, y;
+  var offs=[[R,0],[-R,0],[0,R],[0,-R],[2,2],[-2,2],[2,-2],[-2,-2]];
+  var score=new Float32Array(FMW*FMH);
+  for(y=R+2;y<FMH-R-2;y++){
+    for(x=R+2;x<FMW-R-2;x++){
+      var c0=gr[y*FMW+x], s=0;
+      for(i=0;i<offs.length;i++){
+        s += Math.abs(gr[(y+offs[i][1])*FMW + (x+offs[i][0])] - c0);
+      }
+      score[y*FMW+x]=s;
+    }
+  }
+  /* keep local maxima */
+  for(y=R+3;y<FMH-R-3;y++){
+    for(x=R+3;x<FMW-R-3;x++){
+      var v=score[y*FMW+x];
+      if(v < 120) continue;
+      if(v>=score[y*FMW+x-1] && v>=score[y*FMW+x+1] &&
+         v>=score[(y-1)*FMW+x] && v>=score[(y+1)*FMW+x]) pts.push([x,y,v]);
+    }
+  }
+  pts.sort(function(a,b){ return b[2]-a[2]; });
+  return pts.slice(0, max||220);
+}
+
+function brief(gr, pts){
+  var out=[];
+  for(var k=0;k<pts.length;k++){
+    var px=pts[k][0], py=pts[k][1], bits=new Uint8Array(NPAIRS);
+    for(var i=0;i<NPAIRS;i++){
+      var p=BRIEF_PAIRS[i];
+      var a=gr[(py+p[1])*FMW + (px+p[0])];
+      var b=gr[(py+p[3])*FMW + (px+p[2])];
+      bits[i] = a < b ? 1 : 0;
+    }
+    out.push(bits);
+  }
+  return out;
+}
+
+function hamm(a,b){ var n=0; for(var i=0;i<a.length;i++) if(a[i]!==b[i]) n++; return n; }
+
+function featureSet(img, x, y, w, h){
+  var gr=grayOf(img, x, y, w, h);
+  var pts=corners(gr);
+  return { pts:pts, desc:brief(gr, pts) };
+}
+
+/* Lowe ratio test: a match counts only if it is clearly better than
+   the next best, which throws out repetitive texture. */
+function matchCount(A, B){
+  var good=0;
+  for(var i=0;i<A.desc.length;i++){
+    var b1=999, b2=999;
+    for(var j=0;j<B.desc.length;j++){
+      var d=hamm(A.desc[i], B.desc[j]);
+      if(d<b1){ b2=b1; b1=d; } else if(d<b2) b2=d;
+    }
+    if(b1 < 34 && b1 < b2*0.8) good++;
+  }
+  return good;
+}
+
+var FEAT = {};
+function refFeat(name){
+  if(FEAT[name]) return FEAT[name];
+  var im=REFIMG[name];
+  if(!im) return null;
+  FEAT[name]=featureSet(im, 0, 0, im.naturalWidth, im.naturalHeight);
+  return FEAT[name];
+}
+
+function featureBlock(){
+  if(!S.img || !S.taps.length || !Object.keys(REFIMG).length) return "";
+  var tests = ["Rocket","Golem","Heal Spirit"];
+  var foils = ["Tombstone","Graveyard","Ice Wizard","Prince","Lava Hound"];
+  var rows="";
+  tests.forEach(function(want,i){
+    var t=S.taps[i];
+    if(!t) return;
+    var A=featureSet(S.img, t.x-t.w/2, t.y-t.h/2, t.w, t.h);
+    var rf=refFeat(want);
+    if(!rf) return;
+    var mine=matchCount(A, rf);
+    var best=0, bestN="-";
+    foils.forEach(function(f){
+      if(f===want) return;
+      var rff=refFeat(f);
+      if(!rff) return;
+      var m=matchCount(A, rff);
+      if(m>best){ best=m; bestN=f; }
+    });
+    rows += '<div><span>'+esc(want)+' &middot; kp '+A.pts.length+'/'+rf.pts.length+'</span>'
+      + '<b style="color:'+(mine>best?"#7CE38B":"var(--mid)")+'">'
+      + mine+' vs '+best+' ('+esc(bestN)+')</b></div>';
+  });
+  return '<div class="diagCol"><div class="diagH">feature matching &middot; '
+    + 'consistent matches, higher is better</div>'+rows+'</div>';
+}
+
 /* ── view experiment ────────────────────────────────────────────
    Cards do not fill their frame the same way, so one fixed window
    cannot suit all of them. These are a handful of standard views,
@@ -979,7 +1115,7 @@ function pairBlock(){
 }
 
 function diagBlock(){
-  return '<div class="diag">' + baselineBlock() + expBlock() + sweepBlock() + pairBlock() + S.taps.map(function(t,i){
+  return '<div class="diag">' + baselineBlock() + featureBlock() + expBlock() + sweepBlock() + pairBlock() + S.taps.map(function(t,i){
     var rows = (t.cands||[]).map(function(nm,j){
       var v = (t.scores && t.scores[nm]!==undefined) ? t.scores[nm].toFixed(1) : "-";
       return '<div><span>'+(j+1)+'. '+esc(nm)+'</span><b>'+v+'</b></div>';
