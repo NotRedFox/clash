@@ -302,7 +302,7 @@ var ART = [
 ];
 
 var REF = {};              /* card -> hash, built from card art */
-var REF_KEY = "chaosRefHashes_v18";
+var REF_KEY = "chaosRefArt_v19";
 var refState = { done:0, total:0, failed:0, running:false, why:null };
 
 /* Same fingerprint as the screenshot crop: the centre square of
@@ -430,6 +430,7 @@ function profileDist(shot, ref){
 }
 
 function artScore(shot, ref){
+  if(!ref || !ref.m || !ref.e || !ref.l) return 1e9;
   return colourDist(shot,ref) + edgeDist(shot,ref)*0.8 + profileDist(shot,ref)*0.6;
 }
 
@@ -576,7 +577,10 @@ function loadRefs(cb){
   if (Object.keys(REF).length){ if(cb) cb(); return; }
   try {
     var cached = JSON.parse(localStorage.getItem(REF_KEY));
-    if (cached && Object.keys(cached).length) {
+    var sample = cached && cached[Object.keys(cached)[0]];
+    var usable = sample && sample.p && sample.m && sample.e && sample.l
+                 && sample.p.length === GW*GH*3;
+    if (cached && usable) {
       REF = cached;
       refState.done = Object.keys(REF).length;
       refState.total = refState.done;
