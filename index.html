@@ -238,7 +238,7 @@ function esc(s){ return String(s).replace(/[&<>"]/g,function(c){
 
 /* dHash: shrink crop to 9x8 grey, compare each pixel to its right
    neighbour. 64 bits of brightness shape, resolution independent. */
-var HW=9, HH=8, THRESH=12, LIB_KEY="chaosCardHashes";
+var HW=9, HH=8, THRESH=12, LIB_KEY="chaosCardSigs_v3";
 
 /* The card row sits in the same place on every screenshot. */
 var SLOTS = [
@@ -262,13 +262,6 @@ function hashCrop(img,cx,cy,size){
   return b;
 }
 function ham(a,b){ var n=0; for(var i=0;i<a.length;i++) if(a[i]!==b[i]) n++; return n; }
-function identify(h,lib){
-  var best=null,bd=999;
-  for(var k in lib){ if(!lib.hasOwnProperty(k)) continue;
-    for(var i=0;i<lib[k].length;i++){ var d=ham(h,lib[k][i]); if(d<bd){bd=d;best=k;} } }
-  if (bd <= THRESH) return best;
-  return null;
-}
 
 /* Reference match: nearest colour signature, with the brightness
    hash as a tie-breaker. Returns null when nothing is close. */
@@ -304,7 +297,7 @@ var ART = [
 ];
 
 var REF = {};              /* card -> hash, built from card art */
-var REF_KEY = "chaosRefHashes_v15";
+var REF_KEY = "chaosRefHashes_v17";
 var refState = { done:0, total:0, failed:0, running:false };
 
 /* Same fingerprint as the screenshot crop: the centre square of
@@ -318,58 +311,70 @@ var refState = { done:0, total:0, failed:0, running:false };
    Comparing square crops was the earlier mistake: a square taken from
    a portrait card keeps a different slice depending on the source
    shape, so the two sides were never describing the same region. */
-var GW = 8, GH = 8;
+var GW = 24, GH = 32;
+var CARD_ASPECT = 0.81;
 
-/* Sample only the artwork, not the frame, the elixir drop or the
-   level banner. Those are identical on all 74 cards, so including
-   them adds a large constant that drowns out the part that actually
-   differs. Fractions of the card box. */
-var ART_X0 = 0.08, ART_X1 = 0.92, ART_Y0 = 0.05, ART_Y1 = 0.74;
-var CARD_ASPECT = 0.81;          /* card width / height, measured */
+/* Straight pixel comparison of the artwork.
 
-function gridSig(img, x, y, w, h, cropFrame){
-  /* The in-game card has a frame, an elixir drop and a level banner
-     around the artwork. The reference images are the artwork alone,
-     so only the screenshot side gets trimmed. */
-  if (cropFrame){
-    var nx = x + w*ART_X0, ny = y + h*ART_Y0;
-    var nw = w*(ART_X1-ART_X0), nh = h*(ART_Y1-ART_Y0);
-    x = nx; y = ny; w = nw; h = nh;
-  }
+   Both sides are drawn into the same GW x GH grid. The reference
+   images have a transparent background, so its alpha channel doubles
+   as a mask: only cells where the character actually is get compared,
+   and the background, frame and elixir drop are ignored entirely. */
+function sampleRGBA(img, x, y, w, h){
   var c=document.createElement("canvas"); c.width=GW; c.height=GH;
   var g=c.getContext("2d",{willReadFrequently:true});
-  g.fillStyle="#fff"; g.fillRect(0,0,GW,GH);        /* flatten transparency */
+  g.clearRect(0,0,GW,GH);
   g.drawImage(img, x, y, w, h, 0, 0, GW, GH);
-  var d=g.getImageData(0,0,GW,GH).data, out=[];
-  for(var i=0;i<GW*GH;i++) out.push(d[i*4], d[i*4+1], d[i*4+2]);
-  for(var ch=0; ch<3; ch++){
-    var m=0, n=GW*GH;
-    for(var j=0;j<n;j++) m += out[j*3+ch];
-    m/=n;
-    for(var k=0;k<n;k++) out[k*3+ch] -= m;
+  return g.getImageData(0,0,GW,GH).data;
+}
+
+function refSig(img){
+  var d = sampleRGBA(img, 0, 0, img.naturalWidth, img.naturalHeight);
+  var px=[], mask=[];
+  for(var i=0;i<GW*GH;i++){
+    mask.push(d[i*4+3] > 140 ? 1 : 0);
+    px.push(d[i*4], d[i*4+1], d[i*4+2]);
   }
-  return out;
+  return { p:px, m:mask };
 }
-var CELLW = null;    /* per-cell weights, built once from the references */
-function buildWeights(){
-  var names=Object.keys(REF); if(!names.length) return;
-  var n=REF[names[0]].s.length, mean=new Array(n).fill(0), varr=new Array(n).fill(0);
-  names.forEach(function(k){ for(var i=0;i<n;i++) mean[i]+=REF[k].s[i]; });
-  for(var i=0;i<n;i++) mean[i]/=names.length;
-  names.forEach(function(k){
-    for(var i=0;i<n;i++){ var d=REF[k].s[i]-mean[i]; varr[i]+=d*d; }
-  });
-  CELLW=new Array(n);
-  for(var i=0;i<n;i++) CELLW[i]=Math.sqrt(varr[i]/names.length)+1;
+
+function shotSig(img, x, y, w, h){
+  var d = sampleRGBA(img, x, y, w, h);
+  var px=[];
+  for(var i=0;i<GW*GH;i++) px.push(d[i*4], d[i*4+1], d[i*4+2]);
+  return { p:px, m:null };
 }
-function gridDist(a,b){
-  var s=0, w;
-  for(var i=0;i<a.length;i++){
-    w = CELLW ? CELLW[i] : 1;
-    var d=(a[i]-b[i])*w; s+=d*d;
+
+/* Mean colour difference over the masked cells, after lining up the
+   average brightness of the two so lighting does not dominate. */
+function artDist(shot, ref){
+  var n=0, i, k;
+  var sm=[0,0,0], rm=[0,0,0];
+  for(i=0;i<GW*GH;i++){
+    if(!ref.m[i]) continue;
+    n++;
+    for(k=0;k<3;k++){ sm[k]+=shot.p[i*3+k]; rm[k]+=ref.p[i*3+k]; }
   }
-  return Math.sqrt(s/a.length);
+  if(n < 40) return 1e9;
+  for(k=0;k<3;k++){ sm[k]/=n; rm[k]/=n; }
+  var s=0;
+  for(i=0;i<GW*GH;i++){
+    if(!ref.m[i]) continue;
+    for(k=0;k<3;k++){
+      var d=(shot.p[i*3+k]-sm[k]) - (ref.p[i*3+k]-rm[k]);
+      s += d*d;
+    }
+  }
+  return Math.sqrt(s/(n*3));
 }
+
+/* Comparing two screenshot crops: no mask, compare everything. */
+function shotDist(a,b){
+  var s=0, n=GW*GH*3;
+  for(var i=0;i<n;i++){ var d=a.p[i]-b.p[i]; s+=d*d; }
+  return Math.sqrt(s/n);
+}
+
 
 
 function refSig(img){
@@ -382,7 +387,6 @@ function loadRefs(cb){
     var cached = JSON.parse(localStorage.getItem(REF_KEY));
     if (cached && Object.keys(cached).length) {
       REF = cached;
-      buildWeights();
       refState.done = Object.keys(REF).length;
       refState.total = refState.done;
       cb(); return;
@@ -400,7 +404,7 @@ function loadRefs(cb){
       var img = new Image();
       img.crossOrigin = "anonymous";
       img.onload = function(){
-        try { REF[name] = { s:refSig(img) }; }
+        try { REF[name] = refSig(img); }
         catch(err){ refState.failed++; tick(); return; }   /* tainted canvas */
         tick();
       };
@@ -415,7 +419,6 @@ function loadRefs(cb){
     if (refState.done >= refState.total){
       refState.running = false;
       try { localStorage.setItem(REF_KEY, JSON.stringify(REF)); } catch(e){}
-      buildWeights();
       cb();
     }
   }
@@ -570,24 +573,42 @@ function readSlots(){
     var hh = w / CARD_ASPECT;
     var cx = S.img.naturalWidth * s.x;
     var cy = S.img.naturalHeight * s.y;
-    var hash = hashCrop(S.img, cx, cy, w);
-    var name = identify(hash, S.lib);
-    var cands = [];
+
+    function crop(kx, ky){
+      var w2=w*kx, h2=hh*ky;
+      var x = cx - w2/2 + w2*ART_X0;
+      var y = cy - h2/2 + h2*ART_Y0;
+      return shotSig(S.img, x, y, w2*(ART_X1-ART_X0), h2*(ART_Y1-ART_Y0));
+    }
+    var mySig = crop(1,1);
+
+    /* a correction on this card beats everything else */
+    var name=null, bl=1e9;
+    for(var k in S.lib){
+      if(!S.lib.hasOwnProperty(k)) continue;
+      for(var i=0;i<S.lib[k].length;i++){
+        var e=S.lib[k][i];
+        if(!e || !e.p) continue;
+        var d=shotDist(mySig, e);
+        if(d<bl){ bl=d; if(d<34) name=k; }
+      }
+    }
+
+    var cands=[];
     if(!name){
-      var scores = {};
-      [[1,1],[0.94,0.94],[1.06,1.06],[1,0.92],[1,1.08]].forEach(function(k){
-        var w2=w*k[0], h2=hh*k[1];
-        var sig = gridSig(S.img, cx-w2/2, cy-h2/2, w2, h2, true);
+      var scores={};
+      [[1,1],[0.93,0.93],[1.07,1.07],[1,0.93],[1,1.07]].forEach(function(kk){
+        var sg = crop(kk[0], kk[1]);
         for(var nm in REF){
           if(!REF.hasOwnProperty(nm)) continue;
-          var d = gridDist(sig, REF[nm].s);
-          if(scores[nm]===undefined || d<scores[nm]) scores[nm]=d;
+          var dd = artDist(sg, REF[nm]);
+          if(scores[nm]===undefined || dd<scores[nm]) scores[nm]=dd;
         }
       });
       cands = Object.keys(scores).sort(function(a,b){ return scores[a]-scores[b]; }).slice(0,8);
       name = cands[0] || null;
     }
-    return {x:cx, y:cy, w:w, h:hh, size:w, hash:hash, name:name, cands:cands};
+    return {x:cx, y:cy, w:w, h:hh, size:w, sig:mySig, name:name, cands:cands};
   });
   nextUnknown();
 }
@@ -687,7 +708,9 @@ document.getElementById("view").addEventListener("click",function(e){
   var l=e.target.closest("[data-learn]");
   if(l){ var n=l.dataset.learn, t=S.taps[S.pending];
     if(!S.lib[n]) S.lib[n]=[];
-    S.lib[n].push(t.hash); saveLib(S.lib);
+    S.lib[n].push(t.sig);
+    if(S.lib[n].length>6) S.lib[n].shift();
+    saveLib(S.lib);
     t.name=n; nextUnknown(); render(); return; }
   if(e.target.closest("[data-skip]")){
     S.taps[S.pending].asked=false; S.pending=null; render(); return; }
