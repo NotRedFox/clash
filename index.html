@@ -785,6 +785,72 @@ function refCropURL(name, cb){
   return "";
 }
 
+
+/* ── window sweep ───────────────────────────────────────────────
+   Everything else is switched off here: no edges, no profile, no
+   cost, no weighting. Just raw masked colour distance between the
+   screenshot crop and a reference, over many candidate windows.
+
+   The aim is to find the window where the correct card separates
+   from unrelated ones. If no window does that, the screenshot crop
+   does not contain what we think it does. */
+var EXPECT = ["Rocket","Golem","Heal Spirit"];
+var FOILS  = ["Tombstone","Graveyard","Ice Wizard"];
+
+function rawDist(shot, ref){
+  if(!ref || !ref.m) return 1e9;
+  return colourDist(shot, ref);
+}
+
+/* Fit into the grid without stretching: letterbox instead. */
+function fitSig(img, x, y, w, h){
+  var c=document.createElement("canvas"); c.width=GW; c.height=GH;
+  var g=c.getContext("2d",{willReadFrequently:true});
+  g.fillStyle="#000"; g.fillRect(0,0,GW,GH);
+  var s=Math.min(GW/w, GH/h);
+  var dw=w*s, dh=h*s;
+  g.drawImage(img, x, y, w, h, (GW-dw)/2, (GH-dh)/2, dw, dh);
+  return describe(g.getImageData(0,0,GW,GH).data, false);
+}
+
+function sweepBlock(){
+  if(!S.img || !S.taps.length || !Object.keys(REF).length) return "";
+  var ys = [0.00,0.05,0.10,0.15,0.20];
+  var hs = [0.55,0.65,0.75,0.85];
+  var xs = [0.03,0.08,0.14];
+
+  var out = S.taps.map(function(t,i){
+    var want = EXPECT[i];
+    if(!REF[want]) return '<div><span>slot '+(i+1)+'</span><b>no ref</b></div>';
+    var best=null;
+    ys.forEach(function(y0){ hs.forEach(function(hf){ xs.forEach(function(xi){
+      var x = t.x - t.w/2 + t.w*xi;
+      var y = t.y - t.h/2 + t.h*y0;
+      var w = t.w*(1-xi*2), h = t.h*hf;
+      var sg = fitSig(S.img, x, y, w, h);
+      var d = rawDist(sg, REF[want]);
+      var foil = 1e9;
+      FOILS.forEach(function(f){ if(REF[f]) foil = Math.min(foil, rawDist(sg, REF[f])); });
+      if(!best || (d - foil) < best.gap) best = { y0:y0, hf:hf, xi:xi, d:d, foil:foil, gap:d-foil };
+    });});});
+    return '<div><span>slot '+(i+1)+' '+esc(want)
+      + ' &middot; y'+best.y0+' h'+best.hf+' x'+best.xi+'</span>'
+      + '<b>'+best.d.toFixed(0)+' vs foil '+best.foil.toFixed(0)+'</b></div>';
+  }).join("");
+
+  var t0=S.taps[0];
+  var cur = "";
+  if(t0){
+    var sg = fitSig(S.img, t0.x-t0.w/2+t0.w*ART_X0, t0.y-t0.h/2+t0.h*ART_Y0,
+                           t0.w*(ART_X1-ART_X0), t0.h*(ART_Y1-ART_Y0));
+    var lit=0; for(var i2=0;i2<sg.p.length;i2+=3) if(sg.p[i2]+sg.p[i2+1]+sg.p[i2+2] > 30) lit++;
+    cur = '<div><span>screenshot cells lit</span><b>'+lit+'/'+(GW*GH)+'</b></div>';
+  }
+
+  return '<div class="diagCol"><div class="diagH">window sweep &middot; raw colour only &middot; '
+    + 'lower is better, want a big gap to foil</div>'+out+cur+'</div>';
+}
+
 function baselineBlock(){
   var pairs = [
     ["Rocket","Rocket"], ["Rocket","Tombstone"], ["Rocket","Graveyard"],
@@ -843,7 +909,7 @@ function pairBlock(){
 }
 
 function diagBlock(){
-  return '<div class="diag">' + baselineBlock() + pairBlock() + S.taps.map(function(t,i){
+  return '<div class="diag">' + baselineBlock() + sweepBlock() + pairBlock() + S.taps.map(function(t,i){
     var rows = (t.cands||[]).map(function(nm,j){
       var v = (t.scores && t.scores[nm]!==undefined) ? t.scores[nm].toFixed(1) : "-";
       return '<div><span>'+(j+1)+'. '+esc(nm)+'</span><b>'+v+'</b></div>';
