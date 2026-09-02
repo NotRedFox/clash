@@ -265,7 +265,7 @@ function identify(h,lib){
 
 /* Reference match: nearest colour signature, with the brightness
    hash as a tie-breaker. Returns null when nothing is close. */
-function identifyRef(sig, h){
+function identifyRefScored(sig, h){
   var best=null, bd=1e9, second=1e9;
   for(var n in REF){
     if(!REF.hasOwnProperty(n)) continue;
@@ -275,7 +275,7 @@ function identifyRef(sig, h){
   }
   /* always name the closest card. a wrong name is easy to tap and
      fix, an unanswered question is not. */
-  return best;
+  return best ? { n:best, d:bd } : null;
 }
 
 
@@ -309,7 +309,7 @@ var ART = [
 ];
 
 var REF = {};              /* card -> hash, built from card art */
-var REF_KEY = "chaosRefHashes_v6";
+var REF_KEY = "chaosRefHashes_v7";
 var refState = { done:0, total:0, failed:0, running:false };
 
 /* Same fingerprint as the screenshot crop: the centre square of
@@ -329,6 +329,14 @@ function signature(img, cx, cy, size){
   for(var i=0;i<SIGN*SIGN;i++){
     var a=d[i*4+3]/255;                      /* transparent art reads as white */
     out.push(d[i*4]*a+255*(1-a), d[i*4+1]*a+255*(1-a), d[i*4+2]*a+255*(1-a));
+  }
+  /* subtract the mean of each channel: compares how colour is
+     distributed across the card rather than how bright the shot was */
+  for(var ch=0; ch<3; ch++){
+    var m=0, n=SIGN*SIGN;
+    for(var j=0;j<n;j++) m += out[j*3+ch];
+    m/=n;
+    for(var j2=0;j2<n;j2++) out[j2*3+ch] -= m;
   }
   return out;
 }
@@ -465,16 +473,6 @@ function vScan(){
   if(!S.img) return h + '<div class="meta">Screenshot the card pick screen. '
     + 'It reads the three cards and ranks them.</div>';
 
-  if(S.pending !== null){
-    h += '<div class="ask"><div class="askH">Card '+(S.pending+1)+' of 3. Which is it?</div>'
-      + '<input class="srch" id="lq" placeholder="Search" value="'+esc(S.lq)+'" style="margin-top:10px">'
-      + '<div class="opts">'
-      + CARDS.filter(function(c){ return c.card.toLowerCase().indexOf(S.lq.toLowerCase())!==-1; })
-             .map(function(c){ return '<button data-learn="'+esc(c.card)+'">'+esc(c.card)+'</button>'; })
-             .join("")
-      + '</div><button class="ghost" data-skip="1">Cancel</button></div>';
-  }
-
   var known = S.taps.filter(function(t){ return t.name; });
   if(known.length){
     var rk = known.map(function(t){ return byName(t.name); })
@@ -482,25 +480,38 @@ function vScan(){
     h += '<div class="eyebrow">Best to worst &middot; tap a name to correct</div><div class="list">'
       + rk.map(function(c,i){ return verdict(c, i===0 && rk.length>1); }).join("") + '</div>';
   }
-  h += askBlock;
+
+  if(S.pending !== null){
+    h += '<div class="ask">'
+      + '<input class="srch" id="lq" placeholder="Search cards" value="'+esc(S.lq)+'">'
+      + '<div class="opts">'
+      + CARDS.filter(function(c){ return c.card.toLowerCase().indexOf(S.lq.toLowerCase())!==-1; })
+             .map(function(c){ return '<button data-learn="'+esc(c.card)+'">'+esc(c.card)+'</button>'; })
+             .join("")
+      + '</div><button class="ghost" data-skip="1">Cancel</button></div>';
+  }
 
   h += '<div class="wrapOuter"><div id="wrap"><img id="shot" src="'+S.img.src+'" alt="">'
     + '<div class="mk" id="mk"></div></div></div>'
     + '<button class="ghost" data-reset="1">New screenshot</button>';
   var r=Object.keys(REF).length;
-  if (r < refState.total){
-    h += '<div class="meta">card art '+r+'/'+refState.total+'</div>';
-  }
+  if (r < refState.total) h += '<div class="meta">card art '+r+'/'+refState.total+'</div>';
   return h;
 }
 
 function readSlots(){
   S.taps = SLOTS.map(function(s){
     var cx=S.img.naturalWidth*s.x, cy=S.img.naturalHeight*s.y, size=S.img.naturalWidth*s.w;
-    var inner = size;
-    var hash=hashCrop(S.img,cx,cy,inner);
-    var sig =signature(S.img,cx,cy,inner);
-    var name = identify(hash,S.lib) || identifyRef(sig,hash);
+    var hash=hashCrop(S.img,cx,cy,size);
+    var name = identify(hash,S.lib);
+    if(!name){
+      var best=null, bd=1e9;
+      [0.82,0.92,1.0,1.1].forEach(function(k){
+        var g=identifyRefScored(signature(S.img,cx,cy,size*k), hashCrop(S.img,cx,cy,size*k));
+        if(g && g.d<bd){ bd=g.d; best=g.n; }
+      });
+      name=best;
+    }
     return {x:cx,y:cy,size:size,hash:hash,name:name};
   });
   nextUnknown();
