@@ -457,7 +457,7 @@ function shotDist(a,b){
    No OCR and no redrawn fonts. The app collects real digit crops
    from your own screenshots: whenever a card is confirmed, its cost
    is known, so the digit is filed under that cost. */
-var DIG_KEY = "chaosElixirDigits_v1";
+var DIG_KEY = "chaosElixirDigits_v2";
 var DIGLIB = (function(){
   try { return JSON.parse(localStorage.getItem(DIG_KEY)) || {}; }
   catch(e){ return {}; }
@@ -548,10 +548,10 @@ function recognise(cx, cy, w, hh){
   }
 
   /* cost is a hard filter when it read cleanly, otherwise everything */
-  var pool = Object.keys(REF).filter(function(nm){
-    return cost === null || COST[nm] === cost;
-  });
-  if(pool.length < 2) pool = Object.keys(REF);
+  /* Cost filtering is off. One misread digit removes the correct card
+     before the matcher gets a chance, and a single bad read was being
+     applied to all three slots. */
+  var pool = Object.keys(REF);
   Object.keys(seen).forEach(function(nm){ if(pool.indexOf(nm)===-1) pool.push(nm); });
 
   /* Feature matching is the identity signal. Geometrically consistent
@@ -1228,7 +1228,8 @@ function readSlots(){
     var cy = S.img.naturalHeight * s.y;
     var r = recognise(cx, cy, w, hh);
     /* a confident read teaches the digit library its own cost */
-    if(r.name && r.conf > 0.35 && COST[r.name]) learnDigit(COST[r.name], r.dmask);
+    /* no self-teaching: a wrong recognition would file a wrong digit
+       and make the next scan worse */
     return { x:cx, y:cy, w:w, h:hh, size:w, sig:r.sig, dmask:r.dmask,
              name:r.name, cands:r.ranked, conf:r.conf, cost:r.cost,
              scores:r.scores, detail:r.detail, why:r.why, pool:r.pool };
