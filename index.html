@@ -569,7 +569,15 @@ function recognise(cx, cy, w, hh){
     scores[nm] = -conf;
   });
 
-  var ranked = pool.sort(function(a,b){ return scores[a]-scores[b]; });
+  var ranked = pool.slice().sort(function(a,b){
+    var A2=detail[a], B2=detail[b];
+    if(!A2 && !B2) return 0;
+    if(!A2) return 1;
+    if(!B2) return -1;
+    if(B2.geo !== A2.geo) return B2.geo - A2.geo;
+    if(B2.quality !== A2.quality) return B2.quality - A2.quality;
+    return B2.good - A2.good;
+  });
 
   /* Accept only clear winners. Weak or contested matches report low
      confidence rather than guessing. */
@@ -582,7 +590,7 @@ function recognise(cx, cy, w, hh){
 
   return { sig:mySig, dmask:dmask, cost:cost, name:ranked[0]||null,
            ranked:ranked.slice(0,8), conf:conf, scores:scores,
-           pool:pool.length, why:"art" };
+           detail:detail, pool:pool.length, why:"feature" };
 }
 
 function loadRefs(cb){
@@ -1143,7 +1151,10 @@ function pairBlock(){
 function diagBlock(){
   return '<div class="diag">' + baselineBlock() + featureBlock() + expBlock() + sweepBlock() + pairBlock() + S.taps.map(function(t,i){
     var rows = (t.cands||[]).map(function(nm,j){
-      var v = (t.scores && t.scores[nm]!==undefined) ? t.scores[nm].toFixed(1) : "-";
+      var d = t.detail && t.detail[nm];
+      var v = d ? ('geo '+d.geo+' &middot; good '+d.good
+                   +' &middot; '+(d.quality*100).toFixed(0)+'%')
+                : "-";
       return '<div><span>'+(j+1)+'. '+esc(nm)+'</span><b>'+v+'</b></div>';
     }).join("") || '<div><span>no candidates</span><b>-</b></div>';
     return '<div class="diagCol"><div class="diagH">slot '+(i+1)
@@ -1220,7 +1231,7 @@ function readSlots(){
     if(r.name && r.conf > 0.35 && COST[r.name]) learnDigit(COST[r.name], r.dmask);
     return { x:cx, y:cy, w:w, h:hh, size:w, sig:r.sig, dmask:r.dmask,
              name:r.name, cands:r.ranked, conf:r.conf, cost:r.cost,
-             scores:r.scores, why:r.why, pool:r.pool };
+             scores:r.scores, detail:r.detail, why:r.why, pool:r.pool };
   });
   nextUnknown();
 }
