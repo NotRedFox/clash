@@ -261,7 +261,97 @@ function identify(h,lib){
   var best=null,bd=999;
   for(var k in lib){ if(!lib.hasOwnProperty(k)) continue;
     for(var i=0;i<lib[k].length;i++){ var d=ham(h,lib[k][i]); if(d<bd){bd=d;best=k;} } }
-  return bd<=THRESH ? best : null;
+  if (bd <= THRESH) return best;
+  /* fall back to card art, which is a looser match since the
+     in-game frame is not the same crop as the icon */
+  var rb=null, rd=999;
+  for(var n in REF){ if(!REF.hasOwnProperty(n)) continue;
+    var dd=ham(h,REF[n]); if(dd<rd){ rd=dd; rb=n; } }
+  return rd <= 18 ? rb : null;
+}
+
+
+var SLUG = {
+"Goblin Barrel":"goblin-barrel","Skeleton Army":"skeleton-army","Goblin Demolisher":"goblin-demolisher",
+"Skeleton Barrel":"skeleton-barrel","Goblin Drill":"goblin-drill","Suspicious Bush":"suspicious-bush",
+"Royal Hogs":"royal-hogs","Barbarian Barrel":"barbarian-barrel","Goblin Hut":"goblin-hut","Vines":"vines",
+"The Log":"the-log","Golem":"golem","Ronin":"ronin","Knight":"knight","Berserker":"berserker",
+"Fireball":"fireball","Baby Dragon":"baby-dragon","Musketeer":"musketeer","Poison":"poison",
+"Mega Knight":"mega-knight","Electro Wizard":"electro-wizard","Graveyard":"graveyard","Giant":"giant",
+"Barbarian Hut":"barbarian-hut","Arrows":"arrows","Rascals":"rascals","Goblin Giant":"goblin-giant",
+"Bandit":"bandit","Heal Spirit":"heal-spirit","Witch":"witch","Mortar":"mortar","Firecracker":"firecracker",
+"Zappies":"zappies","Executioner":"executioner","Night Witch":"night-witch","Tesla":"tesla",
+"Flying Machine":"flying-machine","Three Musketeers":"three-musketeers","Tombstone":"tombstone",
+"Inferno Dragon":"inferno-dragon","Wizard":"wizard","Hunter":"hunter","Furnace":"furnace",
+"P.E.K.K.A":"pekka","Elite Barbarians":"elite-barbarians","Princess":"princess","Zap":"zap",
+"Dart Goblin":"dart-goblin","Electro Spirit":"electro-spirit","Inferno Tower":"inferno-tower",
+"Ram Rider":"ram-rider","Rune Giant":"rune-giant","Mother Witch":"mother-witch","Ice Spirit":"ice-spirit",
+"Royal Delivery":"royal-delivery","Ice Wizard":"ice-wizard","Elixir Golem":"elixir-golem",
+"Royal Giant":"royal-giant","Dark Prince":"dark-prince","X-Bow":"x-bow","Fisherman":"fisherman",
+"Rocket":"rocket","Lava Hound":"lava-hound","Valkyrie":"valkyrie","Giant Snowball":"giant-snowball",
+"Rage":"rage","Bomber":"bomber","Mini P.E.K.K.A":"mini-pekka","Prince":"prince","Hog Rider":"hog-rider",
+"Fire Spirit":"fire-spirit","Miner":"miner","Skeletons":"skeletons","Goblins":"goblins"
+};
+
+/* Card art, tried in order until one loads. */
+var ART = [
+  "https://cdn.royaleapi.com/static/img/cards-150/{s}.png",
+  "https://cdn.royaleapi.com/static/img/cards/{s}.png",
+  "https://royaleapi.github.io/cr-api-assets/cards/{s}.png"
+];
+
+var REF = {};              /* card -> hash, built from card art */
+var REF_KEY = "chaosRefHashes";
+var refState = { done:0, total:0, failed:0, running:false };
+
+/* Same fingerprint as the screenshot crop: the centre square of
+   the artwork, so both sides see the same shape. */
+function hashImageCentre(img){
+  var s = Math.min(img.naturalWidth, img.naturalHeight) * 0.78;
+  return hashCrop(img, img.naturalWidth/2, img.naturalHeight*0.46, s);
+}
+
+function loadRefs(cb){
+  if (refState.running) return;
+  try {
+    var cached = JSON.parse(localStorage.getItem(REF_KEY));
+    if (cached && Object.keys(cached).length) {
+      REF = cached;
+      refState.done = Object.keys(REF).length;
+      refState.total = refState.done;
+      cb(); return;
+    }
+  } catch(e){}
+
+  refState.running = true;
+  var names = Object.keys(SLUG);
+  refState.total = names.length;
+
+  names.forEach(function(name){
+    var i = 0;
+    function attempt(){
+      if (i >= ART.length){ refState.failed++; tick(); return; }
+      var img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = function(){
+        try { REF[name] = hashImageCentre(img); }
+        catch(err){ refState.failed++; tick(); return; }   /* tainted canvas */
+        tick();
+      };
+      img.onerror = function(){ i++; attempt(); };
+      img.src = ART[i].replace("{s}", SLUG[name]);
+    }
+    attempt();
+  });
+
+  function tick(){
+    refState.done++;
+    if (refState.done >= refState.total){
+      refState.running = false;
+      try { localStorage.setItem(REF_KEY, JSON.stringify(REF)); } catch(e){}
+      cb();
+    }
+  }
 }
 
 var S = { tab:"scan", deck:[], offer:[], open:null, q:"",
@@ -362,8 +452,10 @@ function vScan(){
   h += '<div class="wrapOuter"><div id="wrap"><img id="shot" src="'+S.img.src+'" alt="">'
     + '<div class="mk" id="mk"></div></div></div>'
     + '<button class="ghost" data-reset="1">New screenshot</button>';
-  var n=libCount(S.lib);
-  h += '<div class="meta">'+n+' learned'
+  var n=libCount(S.lib), r=Object.keys(REF).length;
+  h += '<div class="meta">card art '+r+'/'+refState.total
+    + (refState.failed?' ('+refState.failed+' failed)':'')
+    + ' &middot; '+n+' learned'
     + (n?' &middot; <button data-wipe="1" style="color:var(--low);text-decoration:underline;padding:0">reset</button>':'')
     + '</div>';
   return h;
@@ -471,7 +563,11 @@ document.getElementById("view").addEventListener("change",function(e){
   if(e.target.id!=="file") return;
   var f=e.target.files&&e.target.files[0]; if(!f) return;
   var i=new Image();
-  i.onload=function(){ S.img=i; readSlots(); render(); };
+  i.onload=function(){
+    S.img=i;
+    loadRefs(function(){ readSlots(); render(); });
+    render();
+  };
   i.src=URL.createObjectURL(f);
 });
 document.getElementById("view").addEventListener("click",function(e){
