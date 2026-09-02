@@ -550,6 +550,58 @@ function learnDigit(cost, mask){
   saveDigits();
 }
 
+
+/* Artwork similarity across several views of the same card, taken
+   from the original resolution crop rather than from one small
+   representation. The artwork view carries the most weight. */
+var SCORE_VIEWS = [
+  [ART_Y0, ART_Y1-ART_Y0, ART_X0, 1.0],   /* artwork  */
+  [0.00,   0.55,          0.06,   0.5],   /* upper    */
+  [0.10,   0.70,          0.12,   0.5],   /* centre   */
+  [0.00,   1.00,          0.04,   0.4]    /* full     */
+];
+
+function artworkScore(img, X, Y, W, H, ref){
+  var total=0, wsum=0;
+  for(var i=0;i<SCORE_VIEWS.length;i++){
+    var v=SCORE_VIEWS[i];
+    var sg = fitSig(img, X + W*v[2], Y + H*v[0], W*(1-v[2]*2), H*v[1]);
+    var rv = ref.views && ref.views[i];
+    if(!rv) continue;
+    total += (colourDist(sg, rv) + edgeDist(sg, rv)*0.8) * v[3];
+    wsum  += v[3];
+  }
+  return wsum ? total/wsum : 1e9;
+}
+
+function refViews(img){
+  var W=img.naturalWidth, H=img.naturalHeight, out=[];
+  for(var i=0;i<SCORE_VIEWS.length;i++){
+    var v=SCORE_VIEWS[i];
+    var s = fitSig(img, W*v[2], H*v[0], W*(1-v[2]*2), H*v[1]);
+    s.m=[]; for(var j=0;j<GW*GH;j++) s.m.push(1);
+    out.push(s);
+  }
+  return out;
+}
+
+/* Turn raw distances into 0..1 where 1 is best, so two very
+   different measures can be combined fairly. */
+function normalise(map, keys, lowerIsBetter){
+  var lo=Infinity, hi=-Infinity;
+  keys.forEach(function(k){
+    var v=map[k]; if(v===undefined || !isFinite(v)) return;
+    if(v<lo) lo=v; if(v>hi) hi=v;
+  });
+  var out={};
+  keys.forEach(function(k){
+    var v=map[k];
+    if(v===undefined || !isFinite(v) || hi===lo){ out[k]=0; return; }
+    out[k] = lowerIsBetter ? (hi-v)/(hi-lo) : (v-lo)/(hi-lo);
+  });
+  return out;
+}
+
 /* ── one recognition path ──────────────────────────────────────── */
 function recognise(cx, cy, w, hh){
   function crop(kx, ky){
@@ -595,33 +647,43 @@ function recognise(cx, cy, w, hh){
      Higher is better here, so scores are negated to keep the rest of
      the pipeline sorting ascending. */
   var A = featureSet(S.img, cx-w/2, cy-hh/2, w, hh);
-  var scores={}, detail={};
+  var featRaw={}, artRaw={}, detail={};
   pool.forEach(function(nm){
     var rf = refFeat(nm);
-    if(!rf){ scores[nm] = 0; return; }
-    var m = matchDetail(A, rf);
+    var m = rf ? matchDetail(A, rf) : {good:0,geo:0,quality:0,cands:0};
     detail[nm] = m;
-    var conf = m.geo*0.65 + m.good*0.20 + m.quality*100*0.15;
-    scores[nm] = -conf;
+    featRaw[nm] = m.geo*0.65 + m.good*0.20 + m.quality*100*0.15;
+    artRaw[nm]  = REF[nm] ? artworkScore(S.img, cx-w/2, cy-hh/2, w, hh, REF[nm]) : 1e9;
+  });
+
+  /* Feature matching needs pixels. A full size card gives it plenty,
+     a mega draft tile does not, so trust it in proportion to how much
+     image there actually is. */
+  var small = w < 70;
+  var wFeat = small ? 0.35 : 0.70;
+  var wArt  = 1 - wFeat;
+
+  var fN = normalise(featRaw, pool, false);
+  var aN = normalise(artRaw,  pool, true);
+  var scores={};
+  pool.forEach(function(nm){
+    scores[nm] = -(fN[nm]*wFeat + aN[nm]*wArt);
+    detail[nm].combined = -scores[nm];
+    detail[nm].art = artRaw[nm];
   });
 
   var ranked = pool.slice().sort(function(a,b){
-    var A2=detail[a], B2=detail[b];
-    if(!A2 && !B2) return 0;
-    if(!A2) return 1;
-    if(!B2) return -1;
-    if(B2.geo !== A2.geo) return B2.geo - A2.geo;
-    if(B2.quality !== A2.quality) return B2.quality - A2.quality;
-    return B2.good - A2.good;
+    if(scores[a] !== scores[b]) return scores[a]-scores[b];
+    return (detail[b].geo||0) - (detail[a].geo||0);
   });
 
   /* Accept only clear winners. Weak or contested matches report low
      confidence rather than guessing. */
   var conf = 0, top = ranked[0], second = ranked[1];
   if(top && detail[top]){
-    var g1 = detail[top].geo, g2 = (second && detail[second]) ? detail[second].geo : 0;
-    if(g1 >= 6 && g1 >= g2*1.8) conf = Math.min(1, g1/14);
-    else conf = Math.max(0, Math.min(0.24, g1/40));
+    var c1 = detail[top].combined || 0;
+    var c2 = (second && detail[second]) ? (detail[second].combined||0) : 0;
+    conf = Math.max(0, Math.min(1, (c1 - c2) * 4));
   }
 
   return { sig:mySig, dmask:dmask, cost:cost, name:ranked[0]||null,
@@ -669,6 +731,7 @@ function loadRefs(cb){
         try {
           REFIMG[name] = img;
           REF[name] = refSig(img);
+          REF[name].views = refViews(img);
           REF[name].w = img.naturalWidth;
           REF[name].h = img.naturalHeight;
         }
@@ -1188,8 +1251,9 @@ function diagBlock(){
   return '<div class="diag">' + baselineBlock() + featureBlock() + expBlock() + sweepBlock() + pairBlock() + S.taps.map(function(t,i){
     var rows = (t.cands||[]).map(function(nm,j){
       var d = t.detail && t.detail[nm];
-      var v = d ? ('geo '+d.geo+' &middot; good '+d.good
-                   +' &middot; '+(d.quality*100).toFixed(0)+'%')
+      var v = d ? ('score '+((d.combined||0)*100).toFixed(0)
+                   +' &middot; geo '+d.geo
+                   +' &middot; art '+(d.art>1e8?"-":d.art.toFixed(0)))
                 : "-";
       return '<div><span>'+(j+1)+'. '+esc(nm)+'</span><b>'+v+'</b></div>';
     }).join("") || '<div><span>no candidates</span><b>-</b></div>';
@@ -1222,7 +1286,7 @@ function vScan(){
                        .reduce(function(a,t){ return Math.min(a, t.conf===undefined?1:t.conf); }, 1);
     var costs = S.taps.map(function(t){ return t.cost || "?"; }).join("  ");
     var regionLine = '<div class="meta" style="padding:0 16px 6px">mode '+esc(S.mode)
-      + ' &middot; ' + S.taps.length + ' card regions &middot; library '
+      + ' &middot; screen cards ' + S.taps.length + ' &middot; library '
       + Object.keys(REF).length + '</div>';
     h += '<div class="eyebrow">Best to worst &middot; tap a name to correct'
       + (lowest < 0.25 ? ' &middot; low confidence' : '') + '</div>'
