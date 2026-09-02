@@ -314,80 +314,234 @@ var refState = { done:0, total:0, failed:0, running:false, why:null };
 var GW = 24, GH = 32;
 var CARD_ASPECT = 0.81;
 
-/* Which part of the in-game card is the artwork, as fractions of the
-   card box. Everything outside this is frame, elixir drop and level
-   banner, which is identical on every card. */
+/* Which part of the in-game card is artwork, as fractions of the card
+   box. Outside this is frame, elixir drop and level banner. */
 var ART_X0 = 0.07, ART_X1 = 0.93, ART_Y0 = 0.04, ART_Y1 = 0.76;
 
-/* Straight pixel comparison of the artwork.
+/* The elixir drop, as fractions of the card box. */
+var EL_X0 = 0.30, EL_X1 = 0.70, EL_Y0 = 0.79, EL_Y1 = 1.00;
+var DGW = 14, DGH = 18;
 
-   Both sides are drawn into the same GW x GH grid. The reference
-   images have a transparent background, so its alpha channel doubles
-   as a mask: only cells where the character actually is get compared,
-   and the background, frame and elixir drop are ignored entirely. */
-function sampleRGBA(img, x, y, w, h){
-  var c=document.createElement("canvas"); c.width=GW; c.height=GH;
+function sampleRGBA(img, x, y, w, h, gw, gh){
+  var c=document.createElement("canvas"); c.width=gw; c.height=gh;
   var g=c.getContext("2d",{willReadFrequently:true});
-  g.clearRect(0,0,GW,GH);
-  g.drawImage(img, x, y, w, h, 0, 0, GW, GH);
-  return g.getImageData(0,0,GW,GH).data;
+  g.clearRect(0,0,gw,gh);
+  g.drawImage(img, x, y, w, h, 0, 0, gw, gh);
+  return g.getImageData(0,0,gw,gh).data;
+}
+
+/* ── artwork descriptors ───────────────────────────────────────
+   Three independent views of the same crop. Pixel colour catches
+   palette, edges catch shape, and the row/column profile catches
+   layout. Cards that fool one rarely fool all three. */
+function describe(d, withMask){
+  var px=[], mask=[], lum=[];
+  for(var i=0;i<GW*GH;i++){
+    var r=d[i*4], g=d[i*4+1], b=d[i*4+2], a=d[i*4+3];
+    px.push(r,g,b);
+    lum.push(0.299*r + 0.587*g + 0.114*b);
+    if(withMask) mask.push(a > 140 ? 1 : 0);
+  }
+  /* edge strength per cell */
+  var edge=[];
+  for(var y=0;y<GH;y++){
+    for(var x=0;x<GW;x++){
+      var i0=y*GW+x;
+      var gx = (x<GW-1 ? lum[i0+1] : lum[i0]) - lum[i0];
+      var gy = (y<GH-1 ? lum[i0+GW] : lum[i0]) - lum[i0];
+      edge.push(Math.sqrt(gx*gx + gy*gy));
+    }
+  }
+  return { p:px, m:withMask?mask:null, e:edge, l:lum };
 }
 
 function refSig(img){
-  var d = sampleRGBA(img, 0, 0, img.naturalWidth, img.naturalHeight);
-  var px=[], mask=[];
-  for(var i=0;i<GW*GH;i++){
-    mask.push(d[i*4+3] > 140 ? 1 : 0);
-    px.push(d[i*4], d[i*4+1], d[i*4+2]);
-  }
-  return { p:px, m:mask };
+  return describe(sampleRGBA(img, 0, 0, img.naturalWidth, img.naturalHeight, GW, GH), true);
 }
-
 function shotSig(img, x, y, w, h){
-  var d = sampleRGBA(img, x, y, w, h);
-  var px=[];
-  for(var i=0;i<GW*GH;i++) px.push(d[i*4], d[i*4+1], d[i*4+2]);
-  return { p:px, m:null };
+  return describe(sampleRGBA(img, x, y, w, h, GW, GH), false);
 }
 
-/* Mean colour difference over the masked cells, after lining up the
-   average brightness of the two so lighting does not dominate. */
-function artDist(shot, ref){
-  var n=0, i, k;
-  var sm=[0,0,0], rm=[0,0,0];
+/* Mean-corrected colour difference over the masked cells. */
+function colourDist(shot, ref){
+  var n=0, i, k, sm=[0,0,0], rm=[0,0,0];
   for(i=0;i<GW*GH;i++){
     if(!ref.m[i]) continue;
     n++;
     for(k=0;k<3;k++){ sm[k]+=shot.p[i*3+k]; rm[k]+=ref.p[i*3+k]; }
   }
-  if(n < 40) return 1e9;
+  if(n<40) return 1e9;
   for(k=0;k<3;k++){ sm[k]/=n; rm[k]/=n; }
   var s=0;
   for(i=0;i<GW*GH;i++){
     if(!ref.m[i]) continue;
     for(k=0;k<3;k++){
-      var d=(shot.p[i*3+k]-sm[k]) - (ref.p[i*3+k]-rm[k]);
-      s += d*d;
+      var d=(shot.p[i*3+k]-sm[k])-(ref.p[i*3+k]-rm[k]);
+      s+=d*d;
     }
   }
   return Math.sqrt(s/(n*3));
 }
 
-/* Comparing two screenshot crops: no mask, compare everything. */
+/* Edge maps, each normalised so overall contrast does not matter. */
+function edgeDist(shot, ref){
+  var n=0,i,se=0,re=0;
+  for(i=0;i<GW*GH;i++){ if(!ref.m[i]) continue; n++; se+=shot.e[i]; re+=ref.e[i]; }
+  if(n<40) return 1e9;
+  se=(se/n)||1; re=(re/n)||1;
+  var s=0;
+  for(i=0;i<GW*GH;i++){
+    if(!ref.m[i]) continue;
+    var d=(shot.e[i]/se)-(ref.e[i]/re);
+    s+=d*d;
+  }
+  return Math.sqrt(s/n)*40;
+}
+
+/* Where the bright and dark bands sit, row by row and column by
+   column. Cheap, and good at separating similar palettes. */
+function profileDist(shot, ref){
+  var rows=[[],[]], cols=[[],[]], x, y, i, n;
+  for(y=0;y<GH;y++){
+    var a=0,b=0,c=0;
+    for(x=0;x<GW;x++){ i=y*GW+x; if(!ref.m[i]) continue; a+=shot.l[i]; b+=ref.l[i]; c++; }
+    if(c){ rows[0].push(a/c); rows[1].push(b/c); }
+  }
+  for(x=0;x<GW;x++){
+    var a2=0,b2=0,c2=0;
+    for(y=0;y<GH;y++){ i=y*GW+x; if(!ref.m[i]) continue; a2+=shot.l[i]; b2+=ref.l[i]; c2++; }
+    if(c2){ cols[0].push(a2/c2); cols[1].push(b2/c2); }
+  }
+  function cmp(u,v){
+    if(!u.length) return 0;
+    var mu=0,mv=0,k;
+    for(k=0;k<u.length;k++){ mu+=u[k]; mv+=v[k]; }
+    mu/=u.length; mv/=v.length;
+    var s=0;
+    for(k=0;k<u.length;k++){ var d=(u[k]-mu)-(v[k]-mv); s+=d*d; }
+    return Math.sqrt(s/u.length);
+  }
+  return (cmp(rows[0],rows[1]) + cmp(cols[0],cols[1])) / 2;
+}
+
+function artScore(shot, ref){
+  return colourDist(shot,ref) + edgeDist(shot,ref)*0.8 + profileDist(shot,ref)*0.6;
+}
+
+/* Comparing two screenshot crops, no mask needed. */
 function shotDist(a,b){
   var s=0, n=GW*GH*3;
   for(var i=0;i<n;i++){ var d=a.p[i]-b.p[i]; s+=d*d; }
   return Math.sqrt(s/n);
 }
 
+/* ── elixir digit ──────────────────────────────────────────────
+   No OCR and no redrawn fonts. The app collects real digit crops
+   from your own screenshots: whenever a card is confirmed, its cost
+   is known, so the digit is filed under that cost. */
+var DIG_KEY = "chaosElixirDigits_v1";
+var DIGLIB = (function(){
+  try { return JSON.parse(localStorage.getItem(DIG_KEY)) || {}; }
+  catch(e){ return {}; }
+})();
+function saveDigits(){
+  try { localStorage.setItem(DIG_KEY, JSON.stringify(DIGLIB)); } catch(e){}
+}
 
+/* White digit against the saturated magenta drop. */
+function digitMask(img, cx, cy, w, h){
+  var x = cx - w/2 + w*EL_X0, y = cy - h/2 + h*EL_Y0;
+  var d = sampleRGBA(img, x, y, w*(EL_X1-EL_X0), h*(EL_Y1-EL_Y0), DGW, DGH);
+  var m=[], on=0;
+  for(var i=0;i<DGW*DGH;i++){
+    var r=d[i*4], g=d[i*4+1], b=d[i*4+2];
+    var white = r>165 && g>150 && b>165 && Math.abs(r-b)<70;
+    m.push(white?1:0); if(white) on++;
+  }
+  if(on < 6 || on > DGW*DGH*0.62) return null;
+  return m;
+}
+function maskDist(a,b){
+  var diff=0;
+  for(var i=0;i<a.length;i++) if(a[i]!==b[i]) diff++;
+  return diff/a.length;
+}
 
-var refWaiting = [];
-function finishRefs(cb){
-  refState.running = false;
-  if (cb) cb();
-  var q = refWaiting; refWaiting = [];
-  q.forEach(function(f){ try{ f(); }catch(e){} });
+/* Best cost for this digit, or null when the library cannot say. */
+function readCost(mask){
+  if(!mask) return null;
+  var best=null, bd=1e9, second=1e9;
+  for(var cst in DIGLIB){
+    if(!DIGLIB.hasOwnProperty(cst)) continue;
+    var arr=DIGLIB[cst];
+    for(var i=0;i<arr.length;i++){
+      var d=maskDist(mask, arr[i]);
+      if(d<bd){ second=bd; bd=d; best=+cst; }
+      else if(d<second) second=d;
+    }
+  }
+  if(best===null) return null;
+  if(bd > 0.22) return null;              /* nothing close enough */
+  if(second - bd < 0.05) return null;     /* two costs equally close */
+  return best;
+}
+
+function learnDigit(cost, mask){
+  if(!mask || !cost) return;
+  var k=String(cost);
+  if(!DIGLIB[k]) DIGLIB[k]=[];
+  for(var i=0;i<DIGLIB[k].length;i++) if(maskDist(mask, DIGLIB[k][i]) < 0.05) return;
+  DIGLIB[k].push(mask);
+  if(DIGLIB[k].length > 8) DIGLIB[k].shift();
+  saveDigits();
+}
+
+/* ── one recognition path ──────────────────────────────────────── */
+function recognise(cx, cy, w, hh){
+  function crop(kx, ky){
+    var w2=w*kx, h2=hh*ky;
+    var x = cx - w2/2 + w2*ART_X0;
+    var y = cy - h2/2 + h2*ART_Y0;
+    return shotSig(S.img, x, y, w2*(ART_X1-ART_X0), h2*(ART_Y1-ART_Y0));
+  }
+  var mySig = crop(1,1);
+  var dmask = digitMask(S.img, cx, cy, w, hh);
+  var cost  = readCost(dmask);
+
+  /* a correction on this exact art wins outright */
+  for(var k in S.lib){
+    if(!S.lib.hasOwnProperty(k)) continue;
+    for(var i=0;i<S.lib[k].length;i++){
+      var e=S.lib[k][i];
+      if(e && e.p && shotDist(mySig, e) < 34){
+        return { sig:mySig, dmask:dmask, name:k, ranked:[k], conf:1, scores:{} };
+      }
+    }
+  }
+
+  /* cost is a hard filter when it read cleanly, otherwise everything */
+  var pool = Object.keys(REF).filter(function(nm){
+    return cost === null || COST[nm] === cost;
+  });
+  if(pool.length < 2) pool = Object.keys(REF);
+
+  var scores={};
+  [[1,1],[0.93,0.93],[1.07,1.07],[1,0.93],[1,1.07]].forEach(function(kk){
+    var sg = crop(kk[0], kk[1]);
+    pool.forEach(function(nm){
+      var d = artScore(sg, REF[nm]);
+      if(scores[nm]===undefined || d<scores[nm]) scores[nm]=d;
+    });
+  });
+
+  var ranked = pool.sort(function(a,b){ return scores[a]-scores[b]; });
+  var conf = 0;
+  if(ranked.length > 1){
+    var g = scores[ranked[1]] - scores[ranked[0]];
+    conf = Math.max(0, Math.min(1, g / (scores[ranked[0]]*0.5 + 1)));
+  }
+  return { sig:mySig, dmask:dmask, cost:cost, name:ranked[0]||null,
+           ranked:ranked.slice(0,8), conf:conf, scores:scores };
 }
 
 function loadRefs(cb){
@@ -554,7 +708,13 @@ function vScan(){
   if(known.length){
     var rk = known.map(function(t){ return byName(t.name); })
                   .sort(function(a,b){ return b.avg-a.avg; });
-    h += '<div class="eyebrow">Best to worst &middot; tap a name to correct</div><div class="list">'
+    var lowest = S.taps.filter(function(t){return t.name;})
+                       .reduce(function(a,t){ return Math.min(a, t.conf===undefined?1:t.conf); }, 1);
+    var costs = S.taps.map(function(t){ return t.cost || "?"; }).join("  ");
+    h += '<div class="eyebrow">Best to worst &middot; tap a name to correct'
+      + (lowest < 0.25 ? ' &middot; low confidence' : '') + '</div>'
+      + '<div class="meta" style="padding:0 16px 10px">elixir read: '+esc(costs)+'</div>'
+      + '<div class="list">'
       + rk.map(function(c,i){ return verdict(c, i===0 && rk.length>1); }).join("") + '</div>';
   }
 
@@ -597,42 +757,11 @@ function readSlots(){
     var hh = w / CARD_ASPECT;
     var cx = S.img.naturalWidth * s.x;
     var cy = S.img.naturalHeight * s.y;
-
-    function crop(kx, ky){
-      var w2=w*kx, h2=hh*ky;
-      var x = cx - w2/2 + w2*ART_X0;
-      var y = cy - h2/2 + h2*ART_Y0;
-      return shotSig(S.img, x, y, w2*(ART_X1-ART_X0), h2*(ART_Y1-ART_Y0));
-    }
-    var mySig = crop(1,1);
-
-    /* a correction on this card beats everything else */
-    var name=null, bl=1e9;
-    for(var k in S.lib){
-      if(!S.lib.hasOwnProperty(k)) continue;
-      for(var i=0;i<S.lib[k].length;i++){
-        var e=S.lib[k][i];
-        if(!e || !e.p) continue;
-        var d=shotDist(mySig, e);
-        if(d<bl){ bl=d; if(d<34) name=k; }
-      }
-    }
-
-    var cands=[];
-    if(!name){
-      var scores={};
-      [[1,1],[0.93,0.93],[1.07,1.07],[1,0.93],[1,1.07]].forEach(function(kk){
-        var sg = crop(kk[0], kk[1]);
-        for(var nm in REF){
-          if(!REF.hasOwnProperty(nm)) continue;
-          var dd = artDist(sg, REF[nm]);
-          if(scores[nm]===undefined || dd<scores[nm]) scores[nm]=dd;
-        }
-      });
-      cands = Object.keys(scores).sort(function(a,b){ return scores[a]-scores[b]; }).slice(0,8);
-      name = cands[0] || null;
-    }
-    return {x:cx, y:cy, w:w, h:hh, size:w, sig:mySig, name:name, cands:cands};
+    var r = recognise(cx, cy, w, hh);
+    /* a confident read teaches the digit library its own cost */
+    if(r.name && r.conf > 0.35 && COST[r.name]) learnDigit(COST[r.name], r.dmask);
+    return { x:cx, y:cy, w:w, h:hh, size:w, sig:r.sig, dmask:r.dmask,
+             name:r.name, cands:r.ranked, conf:r.conf, cost:r.cost };
   });
   nextUnknown();
 }
@@ -733,6 +862,7 @@ document.getElementById("view").addEventListener("click",function(e){
   if(l){ var n=l.dataset.learn, t=S.taps[S.pending];
     if(!S.lib[n]) S.lib[n]=[];
     S.lib[n].push(t.sig);
+    if(COST[n]) learnDigit(COST[n], t.dmask);
     if(S.lib[n].length>6) S.lib[n].shift();
     saveLib(S.lib);
     t.name=n; nextUnknown(); render(); return; }
