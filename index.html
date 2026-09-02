@@ -377,8 +377,20 @@ function shotDist(a,b){
 
 
 
+var refWaiting = [];
+function finishRefs(cb){
+  refState.running = false;
+  if (cb) cb();
+  var q = refWaiting; refWaiting = [];
+  q.forEach(function(f){ try{ f(); }catch(e){} });
+}
+
 function loadRefs(cb){
-  if (refState.running) return;
+  /* Anyone who asks while loading is already under way gets queued.
+     Returning early without calling back was leaving the scan with
+     nothing to do, which looked like the matcher failing. */
+  if (refState.running){ if(cb) refWaiting.push(cb); return; }
+  if (Object.keys(REF).length){ if(cb) cb(); return; }
   try {
     var cached = JSON.parse(localStorage.getItem(REF_KEY));
     if (cached && Object.keys(cached).length) {
@@ -422,7 +434,7 @@ function loadRefs(cb){
     if (refState.done >= refState.total){
       refState.running = false;
       try { localStorage.setItem(REF_KEY, JSON.stringify(REF)); } catch(e){}
-      cb();
+      finishRefs(cb);
     }
   }
 }
@@ -697,9 +709,9 @@ document.getElementById("view").addEventListener("change",function(e){
   var f=e.target.files&&e.target.files[0]; if(!f) return;
   var i=new Image();
   i.onload=function(){
-    S.img=i;
-    loadRefs(function(){ readSlots(); render(); });
+    S.img=i; S.taps=[]; S.pending=null;
     render();
+    loadRefs(function(){ if(S.img){ readSlots(); render(); } });
   };
   i.src=URL.createObjectURL(f);
 });
