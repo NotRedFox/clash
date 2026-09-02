@@ -1300,7 +1300,7 @@ var EMB = {
   ready:false, loading:false, err:null, pipe:null,
   refs:{}, done:0, total:0, RawImage:null, mode:"auto"
 };
-var EMB_KEY = "chaosEmbRefs_v1";
+var EMB_KEY = "chaosEmbRefs_v2";
 
 /* Reference vectors go to IndexedDB: 74 x 512 floats is too large
    for localStorage but trivial for IDB, so the second run skips
@@ -1384,13 +1384,26 @@ async function embedImage(img, x, y, w, h){
   g.drawImage(img, x, y, w, h, (224-dw)/2, (224-dh)/2, dw, dh);
   var raw = await EMB.RawImage.fromURL(c.toDataURL());
   var out = await EMB.pipe(raw, { pooling:"mean", normalize:true });
-  return Array.from(out.data);
+  var v = Array.from(out.data);
+  /* Do not trust the pipeline to have normalised. Unnormalised
+     vectors made a dot product favour whichever card had the largest
+     magnitude, which is why a handful of cards won every slot. */
+  var n = 0;
+  for(var i=0;i<v.length;i++) n += v[i]*v[i];
+  n = Math.sqrt(n) || 1;
+  for(i=0;i<v.length;i++) v[i] /= n;
+  v.rawNorm = n;
+  return v;
 }
 
+/* Real cosine: dot over the product of norms. With unit vectors this
+   is the dot product, but it is computed properly so a normalisation
+   slip cannot masquerade as similarity again. */
 function cosine(a,b){
-  var d=0;
-  for(var i=0;i<a.length;i++) d += a[i]*b[i];
-  return d;   /* already normalised */
+  var d=0, na=0, nb=0;
+  for(var i=0;i<a.length;i++){ d += a[i]*b[i]; na += a[i]*a[i]; nb += b[i]*b[i]; }
+  var den = Math.sqrt(na)*Math.sqrt(nb);
+  return den ? d/den : 0;
 }
 
 async function embScan(){
@@ -1409,6 +1422,81 @@ async function embScan(){
   render();
 }
 
+
+/* ── embedding self-test ────────────────────────────────────────
+   Prove the pipeline can tell references apart before trusting it on
+   screenshots. An image against itself must score 1.000. */
+function pixelHash(img){
+  var c=document.createElement("canvas"); c.width=32; c.height=32;
+  var g=c.getContext("2d",{willReadFrequently:true});
+  g.drawImage(img,0,0,32,32);
+  var d=g.getImageData(0,0,32,32).data, h=2166136261;
+  for(var i=0;i<d.length;i+=4){
+    h ^= d[i]; h = Math.imul(h,16777619);
+    h ^= d[i+1]; h = Math.imul(h,16777619);
+    h ^= d[i+2]; h = Math.imul(h,16777619);
+  }
+  return (h>>>0).toString(16);
+}
+
+function embSelfTest(){
+  if(!EMB.ready) return "";
+  var probe = ["Rocket","Golem","Ice Spirit","Heal Spirit","Giant",
+               "Dark Prince","Wizard","Hunter","Princess","Tesla"];
+  var rows = "";
+
+  probe.forEach(function(nm){
+    var v = EMB.refs[nm];
+    if(!v){ rows += '<div><span>'+esc(nm)+'</span><b>missing</b></div>'; return; }
+    var mn=Infinity, mx=-Infinity, bad=0, n=0;
+    for(var i=0;i<v.length;i++){
+      if(!isFinite(v[i])) bad++;
+      if(v[i]<mn) mn=v[i];
+      if(v[i]>mx) mx=v[i];
+      n += v[i]*v[i];
+    }
+    rows += '<div><span>'+esc(nm)+' &middot; '+(REFIMG[nm]?pixelHash(REFIMG[nm]):"?")+'</span>'
+      + '<b>d'+v.length+' &middot; |v| '+Math.sqrt(n).toFixed(3)
+      + ' &middot; raw '+(v.rawNorm?v.rawNorm.toFixed(1):"?")
+      + ' &middot; ['+mn.toFixed(3)+','+mx.toFixed(3)+']'
+      + (bad?' &middot; BAD '+bad:'')+'</b></div>';
+  });
+
+  var pairs = [["Giant","Giant"],["Giant","Dark Prince"],["Giant","Wizard"],
+               ["Dark Prince","Dark Prince"],["Wizard","Wizard"],
+               ["Wizard","Hunter"],["Ice Spirit","Ice Spirit"],
+               ["Ice Spirit","Skeletons"]];
+  var prow = pairs.map(function(p){
+    var a=EMB.refs[p[0]], b=EMB.refs[p[1]];
+    var v = (a&&b) ? cosine(a,b) : NaN;
+    var self = p[0]===p[1];
+    var okCol = self ? (v>0.999?"#7CE38B":"#E4483F") : "var(--mid)";
+    return '<div><span>'+esc(p[0])+' vs '+esc(p[1])+'</span>'
+      + '<b style="color:'+okCol+'">'+(isNaN(v)?"-":v.toFixed(4))+'</b></div>';
+  }).join("");
+
+  var probe2 = probe.map(function(nm){
+    var v=EMB.refs[nm];
+    if(!v) return "";
+    var best=null, bs=-2;
+    Object.keys(EMB.refs).forEach(function(o){
+      if(o===nm) return;
+      var s=cosine(v, EMB.refs[o]);
+      if(s>bs){ bs=s; best=o; }
+    });
+    return '<div><span>'+esc(nm)+' nearest other</span><b>'
+      + esc(best||"-")+' '+bs.toFixed(4)+'</b></div>';
+  }).join("");
+
+  return '<div class="diagCol"><div class="diagH">embedding self test &middot; '
+    + 'model Xenova/clip-vit-base-patch32 &middot; image encoder &middot; input 224x224'
+    + '</div>' + rows
+    + '<div class="diagH" style="margin-top:8px">pairwise cosine &middot; '
+    + 'self must be 1.0000</div>' + prow
+    + '<div class="diagH" style="margin-top:8px">nearest other reference</div>'
+    + probe2 + '</div>';
+}
+
 function embBlock(){
   if(!S.img || !S.taps.length) return "";
   var rows = S.taps.map(function(t,i){
@@ -1418,7 +1506,7 @@ function embBlock(){
     return '<div><span'+(agree?'':' style="color:#E4483F"')+'>slot '+(i+1)
       + ' &middot; feature ' + esc(t.name||"-") + '</span>'
       + '<b>' + t.emb.map(function(e){
-          return esc(e.nm)+' '+e.s.toFixed(3);
+          return esc(e.nm)+' cos '+e.s.toFixed(4);
         }).join(' &middot; ') + '</b></div>';
   }).join("");
   return '<div class="diagCol"><div class="diagH">embeddings &middot; '
@@ -1792,7 +1880,7 @@ function pairBlock(){
 }
 
 function diagBlock(){
-  return '<div class="diag">' + embBlock() + compareBlock() + kpBlock() + boxOverlay() + rawCrops() + cropScaleTest() + baselineBlock() + resTest() + featureBlock() + expBlock() + sweepBlock() + pairBlock() + S.taps.map(function(t,i){
+  return '<div class="diag">' + embSelfTest() + embBlock() + compareBlock() + kpBlock() + boxOverlay() + rawCrops() + cropScaleTest() + baselineBlock() + resTest() + featureBlock() + expBlock() + sweepBlock() + pairBlock() + S.taps.map(function(t,i){
     var rows = (t.cands||[]).map(function(nm,j){
       var d = t.detail && t.detail[nm];
       var v = d ? ('geo '+d.geo+' &middot; good '+d.good
