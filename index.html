@@ -1858,47 +1858,6 @@ function pairBlock(){
     + '<div class="ids">'+ids+'</div></div>';
 }
 
-function diagBlock(){
-  return '<div class="diag">' + sigSelfTest() + compareBlock() + kpBlock() + boxOverlay() + rawCrops() + cropScaleTest() + baselineBlock() + resTest() + featureBlock() + expBlock() + sweepBlock() + pairBlock() + S.taps.map(function(t,i){
-    var rows = (t.cands||[]).map(function(nm,j){
-      var d = t.detail && t.detail[nm];
-      var p = d && d.parts;
-      var v = d ? ('s'+((d.combined||0)*100).toFixed(0)
-                   + (p ? ' &middot; spat '+(p.spatial*100).toFixed(0)
-                        + ' pal '+(p.palette*100).toFixed(0)
-                        + ' hist '+(p.hist*100).toFixed(0)
-                        + ' bri '+(p.bright*100).toFixed(0)
-                        + ' edge '+(p.edge*100).toFixed(0)
-                        + ' feat '+(p.feature*100).toFixed(0) : '')
-                   + ' &middot; geo '+d.geo
-                   + ' &middot; ' + (d.evidence||"-"))
-                : "-";
-      return '<div><span>'+(j+1)+'. '+esc(nm)+'</span><b>'+v+'</b></div>';
-    }).join("") || '<div><span>no candidates</span><b>-</b></div>';
-    return '<div class="diagCol"><div class="diagH">slot '+(i+1)
-      + ' &middot; cost '+(t.cost===null||t.cost===undefined?"?":t.cost)
-      + ' &middot; via '+(t.why||"-")+' &middot; mode '+S.mode
-      + ' &middot; library '+(t.pool===undefined?"?":t.pool)
-      + ' &middot; rect '+Math.round(t.x-t.w/2)+','+Math.round(t.y-t.h/2)
-      + ' '+Math.round(t.w)+'x'+Math.round(t.h)
-      + ' &middot; kp '+(t.kp===undefined?"?":t.kp)
-      + (t.detail && t.cands && t.cands[0] && t.detail[t.cands[0]]
-          ? ' &middot; evidence '+t.detail[t.cands[0]].evidence : "")
-      + ' &middot; gap '+((t.conf||0)*100).toFixed(0)
-      + (t.localBest && t.global && t.localBest!==t.global
-          ? ' &middot; local '+esc(t.localBest)+' &rarr; global '+esc(t.global)
-            +' (local rank '+t.localRankOfGlobal+')'
-          : "")
-      + (t.cands && t.cands[1] && t.detail
-          ? ' &middot; 2nd '+esc(t.cands[1])
-            +' geo '+t.detail[t.cands[1]].geo
-            +' good '+t.detail[t.cands[1]].good
-          : "")
-      + ' &middot; ref cells '+refCells()
-      + '</div>'+rows+'</div>';
-  }).join("") + '</div>';
-}
-
 function vScan(){
   var h = '<div class="seg">'
     + Object.keys(LAYOUTS).map(function(k){
@@ -1908,65 +1867,24 @@ function vScan(){
     + '</div>'
     + '<label class="cta">Load screenshot'
     + '<input type="file" accept="image/*" id="file" style="display:none"></label>';
-  if(!S.img) return h + '<div class="meta">Screenshot the card pick screen. '
-    + 'It reads the three cards and ranks them.</div>';
+  if(!S.img) return h + '<div class="meta">Screenshot the card pick screen '
+    + 'and load it here.</div>';
 
   var known = S.taps.filter(function(t){ return t.name; });
   if(known.length){
     var rk = known.map(function(t){ return byName(t.name); })
+                  .filter(Boolean)
                   .sort(function(a,b){ return b.avg-a.avg; });
-    var lowest = S.taps.filter(function(t){return t.name;})
-                       .reduce(function(a,t){ return Math.min(a, t.conf===undefined?1:t.conf); }, 1);
-    var costs = S.taps.map(function(t){ return t.cost || "?"; }).join("  ");
-    var shotEl = document.getElementById("shot");
-    var dispW = shotEl ? shotEl.clientWidth : 0;
-    var dispH = shotEl ? shotEl.clientHeight : 0;
-    var t0 = S.taps[0];
-    var thin = '<div class="meta" style="padding:0 16px 6px">'
-      + 'screenshot natural ' + S.img.naturalWidth + ' x ' + S.img.naturalHeight
-      + ' &middot; displayed ' + dispW + ' x ' + dispH
-      + ' &middot; scale ' + (dispW ? (S.img.naturalWidth/dispW).toFixed(2) : "?")
-      + (t0 ? ' &middot; slot crop original ' + Math.round(t0.w) + ' x ' + Math.round(t0.h) : "")
-      + '</div>';
-    var uniqLine = (S.taps.length > 6)
-      ? '<div class="meta" style="padding:0 16px 6px">'
-        + '<button data-uniq="1" style="color:'+(S.unique?"var(--acc)":"var(--low)")
-        + ';text-decoration:underline;padding:0">'
-        + (S.unique?"global assignment on":"global assignment off")+'</button>'
-        + (S.assign ? ' &middot; duplicate local winners '+S.assign.dupCount
-            + ' &middot; changed '+S.assign.changed
-            + ' &middot; candidates '+S.assign.cards
-            + ' &middot; total local '+(S.assign.totalLocal*100).toFixed(0)
-            + ' &middot; total global '+(S.assign.totalGlobal*100).toFixed(0) : '')
-        + '</div>'
-      : "";
-    var summaryLine = '<div class="meta" style="padding:0 16px 6px">'
-      + esc(S.mode) + ' &middot; ' + S.taps.length + ' slots &middot; '
-      + S.taps.map(function(t){
-          return esc(t.name||"?") + ' ' + ((t.conf||0)*100).toFixed(0);
-        }).join(', ')
-      + '</div>';
-    var regionLine = '<div class="meta" style="padding:0 16px 6px">mode '+esc(S.mode)
-      + ' &middot; screen cards ' + S.taps.length + ' &middot; library '
-      + Object.keys(REF).length + '</div>';
-    var bestSlot = -1, bestCard = null, bestRating = -1;
-    S.taps.forEach(function(t,i){
-      if(!t.name) return;
-      var cc = byName(t.name);
-      if(cc && cc.avg > bestRating){ bestRating = cc.avg; bestCard = t.name; bestSlot = i; }
-    });
-    h += '<div class="meta" style="padding:0 16px 6px">take this &middot; slot '
-      + (bestSlot+1) + ' &middot; ' + esc(bestCard||"-")
-      + ' &middot; rating ' + (bestRating<0?"-":Math.round(bestRating))
-      + ' &middot; confidence ' + (bestSlot>=0
-          ? ((S.taps[bestSlot].conf||0)*100).toFixed(0) : "-") + '</div>'
-    h += '<div class="eyebrow">Best to worst &middot; tap a name to correct'
-      + (lowest < 0.25 ? ' &middot; low confidence' : '') + '</div>'
-      + summaryLine + thin + uniqLine + regionLine
-      + '<div class="meta" style="padding:0 16px 8px">elixir read: '+esc(costs)+'</div>'
-      + diagBlock()
+    /* Mega boards show far too many cards to read in three seconds,
+       so only the eight best are worth surfacing. */
+    var limit = rk.length > 8 ? 8 : rk.length;
+    var shown = rk.slice(0, limit);
+    h += '<div class="eyebrow">'
+      + (rk.length > 8 ? 'Top 8 of ' + rk.length : 'Best to worst')
+      + ' &middot; tap a name to correct</div>'
       + '<div class="list">'
-      + rk.map(function(c,i){ return verdict(c, i===0 && rk.length>1); }).join("") + '</div>';
+      + shown.map(function(c,i){ return verdict(c, i===0 && shown.length>1); }).join("")
+      + '</div>';
   }
 
   if(S.pending !== null && !S.taps[S.pending]) S.pending = null;
@@ -1995,11 +1913,7 @@ function vScan(){
     + '<div class="mk" id="mk"></div></div></div>'
     + '<button class="ghost" data-reset="1">New screenshot</button>';
   var r=Object.keys(REF).length;
-  if (r < refState.total){
-    h += '<div class="meta">card art '+r+'/'+refState.total
-      + (refState.failed?' &middot; '+refState.failed+' failed':'')
-      + (refState.why?' &middot; '+esc(refState.why):'') + '</div>';
-  }
+  if (r < refState.total) h += '<div class="meta">loading card art '+r+'/'+refState.total+'</div>';
   return h;
 }
 
