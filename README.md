@@ -28,16 +28,29 @@ It runs as a web app. No app store, no install, works on iPhone and Android.
 3. Tap **Add to Home screen**, or **Install app** if it offers that.
 4. Tap Add.
 
-You get an icon on your home screen. Opening it hides the browser bars, so it
-behaves like a normal app. It also works offline once loaded.
+Either way you get an icon on your home screen, and opening it hides the browser
+bars so it behaves like a normal app.
 
 ---
 
 ## What each tab does
 
-**Scan.** Screenshot the draft and load it here. It finds the three cards and
-identifies them by comparing their colour signature against the card art in
-`cards/`. Tap a result to correct it if it gets one wrong, and it remembers.
+**Scan.** Screenshot the card pick screen and load it. It finds the cards,
+identifies them from their artwork, and ranks them best to worst with every
+modifier and rating. Pick the layout first: Chaos draft for the three card
+screen, Mega draft for the larger one.
+
+Recognition works by feature matching. It finds distinctive corners in the card
+artwork, describes the pattern of brightness around each one, and counts how
+many of those descriptions appear in the reference art in `cards/`. Matches then
+have to agree on where the object sits, so scattered coincidental matches are
+discarded and only geometrically consistent ones count.
+
+Nothing needs labelling or training. The reference art is the only input, and
+elixir cost never removes a candidate, since one misread digit would eliminate
+the right card before it could be compared.
+
+Tap a result to correct it if it gets one wrong.
 
 **Cards.** All 50 cards. Three boxes each for common, rare and epic. The bar
 underneath shows the split, so a card with two S mods and one B reads as 67%
@@ -46,8 +59,6 @@ gold, 33% purple. Tap a name to see what the modifiers actually do.
 **Deck.** Pick your 8. It shows a deck rating and, for each of the five waves,
 the chance that at least one of your two offers is S or A tier.
 
-**Draft.** Two modes. Double and triple draft takes up to 3 cards. Mega draft
-takes up to 12 and lets you flip between best first and worst first.
 
 ---
 
@@ -108,20 +119,36 @@ because their modifiers are not catalogued yet.
 
 ## Card recognition
 
-The three cards sit in fixed positions on the pick screen, so the app crops them
-by proportion rather than asking you to point at them.
+The cards sit in fixed positions on the pick screen, so they are cropped by
+proportion rather than by pointing at them. Each layout in `LAYOUTS` defines
+those positions.
 
-Each crop is reduced to a 4x4 grid of average colour, 48 numbers, and compared
-against the same signature computed from every image in `cards/`. Colour is used
-rather than brightness because it survives the difference between the card icon
-and the framed card in game. A brightness hash breaks ties.
+Identification is feature matching, written from scratch with no dependencies:
 
-A match is only accepted when the best candidate is clearly ahead of the runner
-up, so an uncertain card asks rather than guessing. Corrections are stored in
-your browser and take priority afterwards.
+1. Both images are letterboxed to a common size, so nothing is stretched.
+2. Distinctive corners are detected and spread out, so one busy area of the card
+   cannot supply every point.
+3. Each corner gets a 128 bit descriptor built from brightness comparisons
+   around it, packed into four 32 bit words so matching is fast enough to run
+   against all 74 references in real time.
+4. Descriptors are matched with a ratio test, so a match only counts when it is
+   clearly better than the runner up.
+5. Surviving matches must agree on roughly the same offset. Real matches on the
+   same artwork cluster together, coincidental ones scatter.
 
-Tuning lives in `identifyRef`: the distance ceiling and the margin the winner
-needs over second place.
+Cards rank by geometrically consistent matches first, then match quality, then
+raw match count. A result is only reported confidently when the winner has at
+least six consistent matches and nearly twice as many as second place.
+
+This replaced an earlier approach that compared grids of average colour. That
+version could tell a Golem from a Tombstone but failed on cards whose artwork
+does not fill the frame, and the difference is large: on a test screenshot the
+colour method separated the correct card from the runner up by 0.2 points, while
+feature matching separated them by more than ten geometrically consistent
+matches.
+
+Elixir cost is read and displayed but never used to filter, because a single
+misread digit removes the correct card before it can be compared.
 
 Run `get-cards.sh` once to populate `cards/`. The images have to be served from
 the same origin as the page, otherwise the browser will not let it read them.

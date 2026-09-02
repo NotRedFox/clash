@@ -107,6 +107,10 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-of
 .pair img,.ids img{width:54px;height:72px;object-fit:cover;background:#000;display:block}
 .pair span,.ids span{font-size:.55rem;color:var(--low);display:block;margin-top:3px;text-align:center}
 .ids{display:flex;gap:10px;flex-wrap:wrap}
+.seg{display:flex;border-bottom:1px solid var(--line)}
+.seg button{flex:1;min-height:40px;font-size:.7rem;font-weight:700;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--low)}
+.seg button[aria-pressed="true"]{color:var(--ink);background:var(--surface)}
 .diag{padding:0 16px 12px;display:flex;flex-direction:column;gap:10px}
 .diagCol{border-top:1px solid var(--line);padding-top:8px}
 .diagH{font-size:.62rem;letter-spacing:.08em;text-transform:uppercase;color:var(--low);margin-bottom:5px}
@@ -251,11 +255,26 @@ function esc(s){ return String(s).replace(/[&<>"]/g,function(c){
 var HW=9, HH=8, THRESH=12, LIB_KEY="chaosCardSigs_v3";
 
 /* The card row sits in the same place on every screenshot. */
-var SLOTS = [
-  {x:0.213, y:0.542, w:0.246},
-  {x:0.500, y:0.542, w:0.246},
-  {x:0.787, y:0.542, w:0.246}
-];
+/* The card pool is the same in every Chaos variant. What changes is
+   where the cards sit on screen, so mode selects a layout, not a
+   different set of cards. Elixir never removes a candidate. */
+var LAYOUTS = {
+  chaos: { label:"Chaos draft", slots:[
+    {x:0.213, y:0.542, w:0.246},
+    {x:0.500, y:0.542, w:0.246},
+    {x:0.787, y:0.542, w:0.246}
+  ]},
+  mega: { label:"Mega draft", slots:[
+    /* placeholder: needs measuring from a real mega draft screenshot */
+    {x:0.213, y:0.470, w:0.220},
+    {x:0.500, y:0.470, w:0.220},
+    {x:0.787, y:0.470, w:0.220},
+    {x:0.213, y:0.640, w:0.220},
+    {x:0.500, y:0.640, w:0.220},
+    {x:0.787, y:0.640, w:0.220}
+  ], unverified:true }
+};
+var SLOTS = LAYOUTS.chaos.slots;
 
 function loadLib(){ try{ return JSON.parse(localStorage.getItem(LIB_KEY))||{}; }catch(e){ return {}; } }
 function saveLib(l){ try{ localStorage.setItem(LIB_KEY, JSON.stringify(l)); }catch(e){} }
@@ -676,7 +695,7 @@ var COST = {
 };
 
 var S = { tab:"scan", deck:[], offer:[], open:null, q:"",
-          img:null, taps:[], pending:null, diag:false, lib:loadLib(), lq:"" };
+          img:null, taps:[], pending:null, diag:false, mode:"chaos", lib:loadLib(), lq:"" };
 
 function toggle(a,n,max){ var i=a.indexOf(n); if(i!==-1) a.splice(i,1); else if(a.length<max) a.push(n); }
 
@@ -1159,7 +1178,7 @@ function diagBlock(){
     }).join("") || '<div><span>no candidates</span><b>-</b></div>';
     return '<div class="diagCol"><div class="diagH">slot '+(i+1)
       + ' &middot; cost '+(t.cost===null||t.cost===undefined?"?":t.cost)
-      + ' &middot; via '+(t.why||"-")
+      + ' &middot; via '+(t.why||"-")+' &middot; mode '+S.mode
       + ' &middot; considered '+(t.pool===undefined?"?":t.pool)
       + ' &middot; ref cells '+refCells()
       + '</div>'+rows+'</div>';
@@ -1167,7 +1186,17 @@ function diagBlock(){
 }
 
 function vScan(){
-  var h = '<label class="cta">Load screenshot'
+  var h = '<div class="seg">'
+    + Object.keys(LAYOUTS).map(function(k){
+        return '<button data-mode="'+k+'" aria-pressed="'+(S.mode===k)+'">'
+          + esc(LAYOUTS[k].label)+'</button>';
+      }).join("")
+    + '</div>'
+    + (LAYOUTS[S.mode].unverified
+        ? '<div class="meta">Mega draft slot positions are estimated. '
+          + 'Send a mega draft screenshot and they can be measured properly.</div>'
+        : "")
+    + '<label class="cta">Load screenshot'
     + '<input type="file" accept="image/*" id="file" style="display:none"></label>';
   if(!S.img) return h + '<div class="meta">Screenshot the card pick screen. '
     + 'It reads the three cards and ranks them.</div>';
@@ -1221,6 +1250,7 @@ function vScan(){
 }
 
 function readSlots(){
+  SLOTS = LAYOUTS[S.mode].slots;
   S.taps = SLOTS.map(function(s){
     var w  = S.img.naturalWidth * s.w;
     var hh = w / CARD_ASPECT;
@@ -1337,6 +1367,8 @@ document.getElementById("view").addEventListener("click",function(e){
     if(S.lib[n].length>6) S.lib[n].shift();
     saveLib(S.lib);
     t.name=n; nextUnknown(); render(); return; }
+  var md=e.target.closest("[data-mode]");
+  if(md){ S.mode=md.dataset.mode; if(S.img){ readSlots(); } render(); return; }
   if(e.target.closest("[data-diag]")){ S.diag=!S.diag; render(); return; }
   if(e.target.closest("[data-skip]")){
     S.taps[S.pending].asked=false; S.pending=null; render(); return; }
