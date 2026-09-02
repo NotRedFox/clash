@@ -98,6 +98,11 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-of
 .ask{border-top:2px solid var(--acc);background:var(--surface)}
 .askH{font-size:.8rem;font-weight:700;padding:14px 16px 0}
 .opts{max-height:210px;overflow-y:auto}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:10px 12px}
+.grid button{display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 2px;
+  background:var(--bg);border-radius:4px}
+.grid img{width:100%;max-width:56px;aspect-ratio:3/4;object-fit:contain}
+.grid span{font-size:.6rem;color:var(--mid);text-align:center;line-height:1.15}
 .opts button{display:block;width:100%;text-align:left;padding:11px 16px;font-size:.85rem;
   border-bottom:1px solid var(--line)}
 
@@ -299,7 +304,7 @@ var ART = [
 ];
 
 var REF = {};              /* card -> hash, built from card art */
-var REF_KEY = "chaosRefHashes_v10";
+var REF_KEY = "chaosRefHashes_v11";
 var refState = { done:0, total:0, failed:0, running:false };
 
 /* Same fingerprint as the screenshot crop: the centre square of
@@ -511,13 +516,24 @@ function vScan(){
   }
 
   if(S.pending !== null){
+    var t = S.taps[S.pending];
+    var shortlist = (t.cands && t.cands.length) ? t.cands : [];
+    var q = S.lq.toLowerCase();
+    var listed = q
+      ? CARDS.filter(function(c){ return c.card.toLowerCase().indexOf(q)!==-1; })
+             .map(function(c){ return c.card; }).slice(0,20)
+      : shortlist;
     h += '<div class="ask">'
-      + '<input class="srch" id="lq" placeholder="Search cards" value="'+esc(S.lq)+'">'
-      + '<div class="opts">'
-      + CARDS.filter(function(c){ return c.card.toLowerCase().indexOf(S.lq.toLowerCase())!==-1; })
-             .map(function(c){ return '<button data-learn="'+esc(c.card)+'">'+esc(c.card)+'</button>'; })
-             .join("")
-      + '</div><button class="ghost" data-skip="1">Cancel</button></div>';
+      + '<div class="askH">Closest matches</div>'
+      + '<div class="grid">'
+      + listed.map(function(nm){
+          return '<button data-learn="'+esc(nm)+'">'
+            + (SLUG[nm] ? '<img src="cards/'+SLUG[nm]+'.png" alt="">' : "")
+            + '<span>'+esc(nm)+'</span></button>';
+        }).join("")
+      + '</div>'
+      + '<input class="srch" id="lq" placeholder="Or search all cards" value="'+esc(S.lq)+'">'
+      + '<button class="ghost" data-skip="1">Cancel</button></div>';
   }
 
   h += '<div class="wrapOuter"><div id="wrap"><img id="shot" src="'+S.img.src+'" alt="">'
@@ -537,22 +553,22 @@ function readSlots(){
     var x = cx - w/2, y = cy - hh/2;
     var hash = hashCrop(S.img, cx, cy, w);
     var name = identify(hash, S.lib);
+    var cands = [];
     if(!name){
-      var best=null, bd=1e9;
-      /* a little slack on the box, in case the row sits slightly
-         differently on other screen shapes */
+      var scores = {};
       [[1,1],[0.94,0.94],[1.06,1.06],[1,0.92],[1,1.08]].forEach(function(k){
         var w2=w*k[0], h2=hh*k[1];
         var sig = gridSig(S.img, cx-w2/2, cy-h2/2, w2, h2, true);
-        for(var n in REF){
-          if(!REF.hasOwnProperty(n)) continue;
-          var d = gridDist(sig, REF[n].s);
-          if(d < bd){ bd=d; best=n; }
+        for(var nm in REF){
+          if(!REF.hasOwnProperty(nm)) continue;
+          var d = gridDist(sig, REF[nm].s);
+          if(scores[nm]===undefined || d<scores[nm]) scores[nm]=d;
         }
       });
-      name = best;
+      cands = Object.keys(scores).sort(function(a,b){ return scores[a]-scores[b]; }).slice(0,8);
+      name = cands[0] || null;
     }
-    return {x:cx, y:cy, w:w, h:hh, size:w, hash:hash, name:name};
+    return {x:cx, y:cy, w:w, h:hh, size:w, hash:hash, name:name, cands:cands};
   });
   nextUnknown();
 }
