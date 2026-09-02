@@ -114,7 +114,6 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-of
   <button role="tab" data-tab="scan" aria-selected="true">Scan</button>
   <button role="tab" data-tab="cards" aria-selected="false">Cards</button>
   <button role="tab" data-tab="deck" aria-selected="false">Deck</button>
-  <button role="tab" data-tab="draft" aria-selected="false">Draft</button>
 </div>
 
 <div id="view"></div>
@@ -236,9 +235,9 @@ var HW=9, HH=8, THRESH=12, LIB_KEY="chaosCardHashes";
 
 /* The card row sits in the same place on every screenshot. */
 var SLOTS = [
-  {x:0.213, y:0.520, w:0.25},
-  {x:0.500, y:0.520, w:0.25},
-  {x:0.787, y:0.520, w:0.25}
+  {x:0.213, y:0.542, w:0.246},
+  {x:0.500, y:0.542, w:0.246},
+  {x:0.787, y:0.542, w:0.246}
 ];
 
 function loadLib(){ try{ return JSON.parse(localStorage.getItem(LIB_KEY))||{}; }catch(e){ return {}; } }
@@ -270,13 +269,12 @@ function identifyRef(sig, h){
   var best=null, bd=1e9, second=1e9;
   for(var n in REF){
     if(!REF.hasOwnProperty(n)) continue;
-    var d = sigDist(sig, REF[n].s) + ham(h, REF[n].h) * 0.6;
+    var d = sigDist(sig, REF[n].s) + ham(h, REF[n].h) * 1.8;
     if(d < bd){ second = bd; bd = d; best = n; }
     else if(d < second){ second = d; }
   }
-  /* only trust it when the winner is clearly ahead of the runner up */
-  if (bd > 105) return null;
-  if (second - bd < 1.5) return null;
+  /* always name the closest card. a wrong name is easy to tap and
+     fix, an unanswered question is not. */
   return best;
 }
 
@@ -311,7 +309,7 @@ var ART = [
 ];
 
 var REF = {};              /* card -> hash, built from card art */
-var REF_KEY = "chaosRefHashes_v4";
+var REF_KEY = "chaosRefHashes_v6";
 var refState = { done:0, total:0, failed:0, running:false };
 
 /* Same fingerprint as the screenshot crop: the centre square of
@@ -319,8 +317,10 @@ var refState = { done:0, total:0, failed:0, running:false };
 
 /* Colour signature. The card art is far more distinctive by colour
    than by brightness gradients, and colour survives the difference
-   between the icon and the in-game frame. 4x4 grid of mean RGB. */
-var SIGN = 4;
+   between the icon and the in-game frame. A 6x6 grid keeps enough
+   spatial detail to separate cards that share a palette, like Golem
+   and Rune Giant. */
+var SIGN = 6;
 function signature(img, cx, cy, size){
   var c=document.createElement("canvas"); c.width=SIGN; c.height=SIGN;
   var x=c.getContext("2d",{willReadFrequently:true}), h=size/2;
@@ -339,10 +339,10 @@ function sigDist(a,b){
 }
 
 function hashImageCentre(img){
-  return hashCrop(img, img.naturalWidth/2, img.naturalHeight*0.5, img.naturalWidth*0.7);
+  return hashCrop(img, img.naturalWidth/2, img.naturalHeight*0.5, img.naturalWidth);
 }
 function sigImageCentre(img){
-  return signature(img, img.naturalWidth/2, img.naturalHeight*0.5, img.naturalWidth*0.7);
+  return signature(img, img.naturalWidth/2, img.naturalHeight*0.5, img.naturalWidth);
 }
 
 function loadRefs(cb){
@@ -472,7 +472,7 @@ function vScan(){
       + CARDS.filter(function(c){ return c.card.toLowerCase().indexOf(S.lq.toLowerCase())!==-1; })
              .map(function(c){ return '<button data-learn="'+esc(c.card)+'">'+esc(c.card)+'</button>'; })
              .join("")
-      + '</div><button class="ghost" data-skip="1">Skip</button></div>';
+      + '</div><button class="ghost" data-skip="1">Cancel</button></div>';
   }
 
   var known = S.taps.filter(function(t){ return t.name; });
@@ -482,6 +482,7 @@ function vScan(){
     h += '<div class="eyebrow">Best to worst &middot; tap a name to correct</div><div class="list">'
       + rk.map(function(c,i){ return verdict(c, i===0 && rk.length>1); }).join("") + '</div>';
   }
+  h += askBlock;
 
   h += '<div class="wrapOuter"><div id="wrap"><img id="shot" src="'+S.img.src+'" alt="">'
     + '<div class="mk" id="mk"></div></div></div>'
@@ -496,7 +497,7 @@ function vScan(){
 function readSlots(){
   S.taps = SLOTS.map(function(s){
     var cx=S.img.naturalWidth*s.x, cy=S.img.naturalHeight*s.y, size=S.img.naturalWidth*s.w;
-    var inner = size*0.7;
+    var inner = size;
     var hash=hashCrop(S.img,cx,cy,inner);
     var sig =signature(S.img,cx,cy,inner);
     var name = identify(hash,S.lib) || identifyRef(sig,hash);
@@ -504,10 +505,11 @@ function readSlots(){
   });
   nextUnknown();
 }
+/* Only set by tapping a result to correct it. */
 function nextUnknown(){
   S.pending=null;
   for(var i=0;i<S.taps.length;i++)
-    if(!S.taps[i].name && !S.taps[i].skipped){ S.pending=i; S.lq=""; return; }
+    if(!S.taps[i].name && S.taps[i].asked){ S.pending=i; S.lq=""; return; }
 }
 
 function vCards(){
@@ -549,29 +551,11 @@ function vDeck(){
       }).join("")+'</div>';
 }
 
-function vDraft(){
-  var mega = S.offer.length > 3;
-  var rk = S.offer.map(byName).sort(function(a,b){ return mega ? a.avg-b.avg : b.avg-a.avg; });
-  var h = "";
-  if(rk.length){
-    h = '<div class="eyebrow">'+(mega?'Worst to best':'Best pick')+'</div><div class="list">'
-      + rk.map(function(c,i){
-          var top = mega ? (i===rk.length-1) : (i===0 && rk.length>1);
-          return verdict(c, top, mega ? (rk.length-i) : 0);
-        }).join("")
-      + '</div><button class="ghost" id="clear">Clear</button>';
-  }
-  return h + '<input class="srch" id="q" placeholder="Search cards" value="'+esc(S.q)+'">'
-    + '<div class="list">'+filtered().map(function(c){
-        return item(c, S.offer.indexOf(c.card)!==-1); }).join("")+'</div>';
-}
-
 function render(){
   var el=document.getElementById("view"), af=document.activeElement;
   var fid=(af&&(af.id==="q"||af.id==="lq"))?af.id:null;
   var car=fid?af.selectionStart:null;
-  el.innerHTML = S.tab==="scan" ? vScan() : S.tab==="cards" ? vCards()
-               : S.tab==="deck" ? vDeck() : vDraft();
+  el.innerHTML = S.tab==="scan" ? vScan() : S.tab==="cards" ? vCards() : vDeck();
   document.querySelectorAll(".tabs button").forEach(function(b){
     b.setAttribute("aria-selected", b.dataset.tab===S.tab ? "true":"false"); });
   if(fid){ var f=document.getElementById(fid); if(f){ f.focus(); f.setSelectionRange(car,car); } }
@@ -610,7 +594,7 @@ document.getElementById("view").addEventListener("click",function(e){
   if(fx && S.tab==="scan"){
     var want=fx.dataset.fix;
     for(var k=0;k<S.taps.length;k++){
-      if(S.taps[k].name===want){ S.taps[k].name=null; S.taps[k].skipped=false; break; }
+      if(S.taps[k].name===want){ S.taps[k].name=null; S.taps[k].asked=true; break; }
     }
     nextUnknown(); render(); return;
   }
@@ -619,16 +603,14 @@ document.getElementById("view").addEventListener("click",function(e){
     if(!S.lib[n]) S.lib[n]=[];
     S.lib[n].push(t.hash); saveLib(S.lib);
     t.name=n; nextUnknown(); render(); return; }
-  if(e.target.closest("[data-skip]")){ S.taps[S.pending].skipped=true; nextUnknown(); render(); return; }
+  if(e.target.closest("[data-skip]")){
+    S.taps[S.pending].asked=false; S.pending=null; render(); return; }
   if(e.target.closest("[data-reset]")){ S.img=null; S.taps=[]; S.pending=null; render(); return; }
   if(e.target.closest("[data-wipe]")){ S.lib={}; saveLib(S.lib); render(); return; }
   var o=e.target.closest("[data-open]");
   if(o){ S.open = S.open===o.dataset.open ? null : o.dataset.open; render(); return; }
   var g=e.target.closest("[data-toggle]");
-  if(g){ if(S.tab==="draft") toggle(S.offer,g.dataset.toggle,12);
-         else toggle(S.deck,g.dataset.toggle,8);
-         render(); return; }
-  if(e.target.id==="clear"){ S.offer=[]; render(); }
+  if(g){ toggle(S.deck,g.dataset.toggle,8); render(); return; }
 });
 document.getElementById("view").addEventListener("input",function(e){
   if(e.target.id==="q"){ S.q=e.target.value; render(); }
