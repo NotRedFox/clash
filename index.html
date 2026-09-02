@@ -1067,7 +1067,7 @@ function featureBlock(){
 
   tests.forEach(function(want,i){
     var t=S.taps[i];
-    if(!t || !REFIMG[want]) return;
+    if(!t || !REFIMG[want] || S.taps.length > 6) return;
     var A=featureSet(S.img, t.x-t.w/2, t.y-t.h/2, t.w, t.h);
     var list=[want].concat(foils.filter(function(f){ return f!==want; })).slice(0,5);
     rows += '<div class="diagH" style="margin-top:8px">'+esc(want)
@@ -1118,7 +1118,7 @@ function expBlock(){
   var rows = "";
   EXPECT.forEach(function(want, i){
     var t = S.taps[i];
-    if(!t || !REFIMG[want]) return;
+    if(!t || !REFIMG[want] || S.taps.length > 6) return;
     rows += '<div class="diagH" style="margin-top:8px">'+esc(want)+'</div>';
     VIEWS.forEach(function(v){
       var sg = viewOf(S.img, t.x-t.w/2, t.y-t.h/2, t.w, t.h, v);
@@ -1297,6 +1297,7 @@ function vScan(){
       + rk.map(function(c,i){ return verdict(c, i===0 && rk.length>1); }).join("") + '</div>';
   }
 
+  if(S.pending !== null && !S.taps[S.pending]) S.pending = null;
   if(S.pending !== null){
     var t = S.taps[S.pending];
     var shortlist = (t.cands && t.cands.length) ? t.cands : [];
@@ -1349,6 +1350,7 @@ function readSlots(){
 }
 /* Only set by tapping a result to correct it. */
 function nextUnknown(){
+  if(S.pending !== null && !S.taps[S.pending]) S.pending = null;
   S.pending=null;
   for(var i=0;i<S.taps.length;i++)
     if(!S.taps[i].name && S.taps[i].asked){ S.pending=i; S.lq=""; return; }
@@ -1441,7 +1443,9 @@ document.getElementById("view").addEventListener("click",function(e){
     nextUnknown(); render(); return;
   }
   var l=e.target.closest("[data-learn]");
-  if(l){ var n=l.dataset.learn, t=S.taps[S.pending];
+  if(l){
+    var n=l.dataset.learn, t=S.taps[S.pending];
+    if(!t){ S.pending=null; render(); return; }
     if(!S.lib[n]) S.lib[n]=[];
     S.lib[n].push(t.sig);
     if(COST[n]) learnDigit(COST[n], t.dmask);
@@ -1449,10 +1453,20 @@ document.getElementById("view").addEventListener("click",function(e){
     saveLib(S.lib);
     t.name=n; nextUnknown(); render(); return; }
   var md=e.target.closest("[data-mode]");
-  if(md){ S.mode=md.dataset.mode; if(S.img){ readSlots(); } render(); return; }
+  if(md){
+    if(S.mode !== md.dataset.mode){
+      S.mode = md.dataset.mode;
+      /* slot count changes with the layout, so anything pointing at a
+         slot index from the previous mode is no longer valid */
+      S.pending = null; S.lq = ""; S.open = null; S.taps = [];
+      if(S.img) readSlots();
+    }
+    render(); return;
+  }
   if(e.target.closest("[data-diag]")){ S.diag=!S.diag; render(); return; }
   if(e.target.closest("[data-skip]")){
-    S.taps[S.pending].asked=false; S.pending=null; render(); return; }
+    if(S.taps[S.pending]) S.taps[S.pending].asked=false;
+    S.pending=null; render(); return; }
   if(e.target.closest("[data-reset]")){ S.img=null; S.taps=[]; S.pending=null; render(); return; }
   if(e.target.closest("[data-wipe]")){ S.lib={}; saveLib(S.lib); render(); return; }
   var o=e.target.closest("[data-open]");
