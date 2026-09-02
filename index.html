@@ -706,6 +706,87 @@ function templateRank(img, X, Y, W, H, names){
   return out;
 }
 
+
+/* ── global assignment ──────────────────────────────────────────
+   If every card on a mega draft board is distinct, then choosing
+   independently per slot wastes information: two slots claiming the
+   same card means at least one is wrong. Proper maximum weight
+   bipartite matching, not greedy de-duplication, which can wreck a
+   good global solution to fix one duplicate. */
+function hungarian(cost, n, m){
+  /* Jonker-Volgenant style, rows n <= cols m. cost is minimised. */
+  var INF=1e18;
+  var u=new Float64Array(n+1), v=new Float64Array(m+1);
+  var p=new Int32Array(m+1), way=new Int32Array(m+1);
+  for(var i=1;i<=n;i++){
+    p[0]=i;
+    var j0=0;
+    var minv=new Float64Array(m+1); minv.fill(INF);
+    var used=new Uint8Array(m+1);
+    do{
+      used[j0]=1;
+      var i0=p[j0], delta=INF, j1=-1;
+      for(var j=1;j<=m;j++){
+        if(used[j]) continue;
+        var cur=cost[(i0-1)*m + (j-1)] - u[i0] - v[j];
+        if(cur<minv[j]){ minv[j]=cur; way[j]=j0; }
+        if(minv[j]<delta){ delta=minv[j]; j1=j; }
+      }
+      for(var j2=0;j2<=m;j2++){
+        if(used[j2]){ u[p[j2]]+=delta; v[j2]-=delta; }
+        else minv[j2]-=delta;
+      }
+      j0=j1;
+    } while(p[j0]!==0);
+    do{ var j3=way[j0]; p[j0]=p[j3]; j0=j3; } while(j0);
+  }
+  var res=new Int32Array(n).fill(-1);
+  for(var j=1;j<=m;j++) if(p[j]>0) res[p[j]-1]=j-1;
+  return res;
+}
+
+function globalAssign(){
+  if(!S.unique) return;
+  var slots=S.taps;
+  if(slots.length < 2) return;
+
+  /* union of each slot's plausible candidates */
+  var set={};
+  slots.forEach(function(t){
+    (t.ranked20||[]).forEach(function(nm){ set[nm]=1; });
+  });
+  var cards=Object.keys(set);
+  if(cards.length < slots.length) return;
+
+  var n=slots.length, m=cards.length;
+  var cost=new Float64Array(n*m);
+  for(var i=0;i<n;i++){
+    for(var j=0;j<m;j++){
+      var d=slots[i].detail && slots[i].detail[cards[j]];
+      /* minimise, so negate the score; unseen pairs are expensive */
+      cost[i*m+j] = d ? -(d.combined||0) : 5;
+    }
+  }
+  var res=hungarian(cost, n, m);
+
+  var dupBefore={}, dupCount=0;
+  slots.forEach(function(t){
+    if(!t.name) return;
+    dupBefore[t.name]=(dupBefore[t.name]||0)+1;
+  });
+  Object.keys(dupBefore).forEach(function(k){ if(dupBefore[k]>1) dupCount+=dupBefore[k]-1; });
+
+  var changed=0;
+  slots.forEach(function(t,i){
+    var pick=cards[res[i]];
+    t.localBest=t.name;
+    t.localRankOfGlobal=(t.ranked20||[]).indexOf(pick)+1;
+    if(pick && pick!==t.name){ t.name=pick; changed++; }
+    t.global=pick;
+  });
+  S.assign={ dupCount:dupCount, changed:changed, cards:cards.length };
+}
+
 /* ── one recognition path ──────────────────────────────────────── */
 function recognise(cx, cy, w, hh){
   function crop(kx, ky){
@@ -782,7 +863,8 @@ function recognise(cx, cy, w, hh){
         (detail[rankedT[0]].combined - detail[rankedT[1]].combined) * 5));
     }
     return { sig:mySig, dmask:dmask, cost:cost, name:rankedT[0]||null,
-             ranked:rankedT.slice(0,8), conf:cT, scores:sc, detail:detail,
+             ranked:rankedT.slice(0,8), ranked20:rankedT.slice(0,20),
+             conf:cT, scores:sc, detail:detail,
              pool:pool.length, kp:kpCount, why:"template" };
   }
 
@@ -816,7 +898,7 @@ function recognise(cx, cy, w, hh){
   }
 
   return { sig:mySig, dmask:dmask, cost:cost, name:ranked[0]||null,
-           ranked:ranked.slice(0,8), conf:conf, scores:scores,
+           ranked:ranked.slice(0,8), ranked20:ranked.slice(0,20), conf:conf, scores:scores,
            detail:detail, pool:pool.length, kp:kpCount, why:"feature" };
 }
 
@@ -905,7 +987,7 @@ var COST = {
 };
 
 var S = { tab:"scan", deck:[], offer:[], open:null, q:"",
-          img:null, taps:[], pending:null, diag:false, mode:"triple", lib:loadLib(), lq:"" };
+          img:null, taps:[], pending:null, diag:false, mode:"triple", unique:false, lib:loadLib(), lq:"" };
 
 function toggle(a,n,max){ var i=a.indexOf(n); if(i!==-1) a.splice(i,1); else if(a.length<max) a.push(n); }
 
@@ -1477,6 +1559,10 @@ function diagBlock(){
       + ' &middot; crop '+Math.round(t.w)+'x'+Math.round(t.h)
       + ' &middot; kp '+(t.kp===undefined?"?":t.kp)
       + ' &middot; gap '+((t.conf||0)*100).toFixed(0)
+      + (t.localBest && t.global && t.localBest!==t.global
+          ? ' &middot; local '+esc(t.localBest)+' &rarr; global '+esc(t.global)
+            +' (local rank '+t.localRankOfGlobal+')'
+          : "")
       + (t.cands && t.cands[1] && t.detail
           ? ' &middot; 2nd '+esc(t.cands[1])
             +' geo '+t.detail[t.cands[1]].geo
@@ -1516,12 +1602,22 @@ function vScan(){
       + ' &middot; scale ' + (dispW ? (S.img.naturalWidth/dispW).toFixed(2) : "?")
       + (t0 ? ' &middot; slot crop original ' + Math.round(t0.w) + ' x ' + Math.round(t0.h) : "")
       + '</div>';
+    var uniqLine = (S.taps.length > 6)
+      ? '<div class="meta" style="padding:0 16px 6px">'
+        + '<button data-uniq="1" style="color:'+(S.unique?"var(--acc)":"var(--low)")
+        + ';text-decoration:underline;padding:0">'
+        + (S.unique?"global assignment on":"global assignment off")+'</button>'
+        + (S.assign ? ' &middot; duplicate local winners '+S.assign.dupCount
+            + ' &middot; changed by assignment '+S.assign.changed
+            + ' &middot; candidate cards '+S.assign.cards : '')
+        + '</div>'
+      : "";
     var regionLine = '<div class="meta" style="padding:0 16px 6px">mode '+esc(S.mode)
       + ' &middot; screen cards ' + S.taps.length + ' &middot; library '
       + Object.keys(REF).length + '</div>';
     h += '<div class="eyebrow">Best to worst &middot; tap a name to correct'
       + (lowest < 0.25 ? ' &middot; low confidence' : '') + '</div>'
-      + thin + regionLine
+      + thin + uniqLine + regionLine
       + '<div class="meta" style="padding:0 16px 8px">elixir read: '+esc(costs)+'</div>'
       + diagBlock()
       + '<div class="list">'
@@ -1574,9 +1670,10 @@ function readSlots(){
     /* no self-teaching: a wrong recognition would file a wrong digit
        and make the next scan worse */
     return { x:cx, y:cy, w:w, h:hh, size:w, sig:r.sig, dmask:r.dmask,
-             name:r.name, cands:r.ranked, conf:r.conf, cost:r.cost,
+             name:r.name, cands:r.ranked, ranked20:r.ranked20, conf:r.conf, cost:r.cost,
              scores:r.scores, detail:r.detail, why:r.why, pool:r.pool, kp:r.kp };
   });
+  globalAssign();
   nextUnknown();
 }
 /* Only set by tapping a result to correct it. */
@@ -1683,6 +1780,9 @@ document.getElementById("view").addEventListener("click",function(e){
     if(S.lib[n].length>6) S.lib[n].shift();
     saveLib(S.lib);
     t.name=n; nextUnknown(); render(); return; }
+  if(e.target.closest("[data-uniq]")){
+    S.unique=!S.unique; if(S.img) readSlots(); render(); return;
+  }
   var md=e.target.closest("[data-mode]");
   if(md){
     if(S.mode !== md.dataset.mode){
