@@ -462,23 +462,32 @@ function filtered(){
 }
 
 function verdict(c,win,rank){
+  var thumb = SLUG[c.card]
+    ? '<img class="refimg" src="cards/'+SLUG[c.card]+'.png" alt="">' : "";
+  var head = '<div class="pkTop">'
+    + '<button class="pkNm" data-fix="'+esc(c.card)+'" '
+    + 'style="display:flex;align-items:center;text-align:left;padding:0">'
+    + thumb
+    + (rank?'<span class="rk">'+rank+'</span>':"")
+    + esc(c.card) + '</button>';
+
   if(!c.common){
-    return '<div class="pk"><div class="pkTop"><span class="pkNm">'
-      + (rank?'<span class="rk">'+rank+'</span>':"")+esc(c.card)+'</span>'
+    return '<div class="pk">' + head
       + '<span class="pkSc" style="color:var(--low)">?</span></div>'
       + '<div class="me">No modifier data catalogued yet</div></div>';
   }
   return '<div class="pk'+(win?" win":"")+'">'
     + (win?'<span class="tag">TAKE THIS</span>':"")
-    + '<div class="pkTop"><span class="pkNm">'
-    + (rank?'<span class="rk">'+rank+'</span>':"")+esc(c.card)+'</span>'
+    + head
     + '<span class="pkSc">'+Math.round(c.avg)+'</span></div>'
     + tbar(c,"0 0 12px") + '<div class="pkMods">'
     + R.map(function(r){
         var b=band(c[r].v);
         return '<div class="pkMod"><span class="bar" style="background:'+b.c
-          + ';height:22px"></span><span class="me" style="margin:0">'
-          + '<span class="mr">'+r+'</span> '+esc(c[r].n)+'</span>'
+          + ';height:30px"></span><span class="me" style="margin:0">'
+          + esc(c[r].e)
+          + '<span class="mr" style="display:block;letter-spacing:0;text-transform:none">'
+          + r+' &middot; '+esc(c[r].n)+'</span></span>'
           + '<span class="mv">'+c[r].v+'</span></div>';
       }).join("") + '</div></div>';
 }
