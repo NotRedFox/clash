@@ -306,7 +306,8 @@ var ART = [
   "https://royaleapi.github.io/cr-api-assets/cards/{s}.png"
 ];
 
-var REF = {};              /* card -> hash, built from card art */
+var REF = {};
+var REFIMG = {};              /* card -> hash, built from card art */
 var REF_KEY = "chaosRefArt_v20";
 var refState = { done:0, total:0, failed:0, running:false, why:null };
 
@@ -630,6 +631,7 @@ function loadRefs(cb){
       if (/^https?:/.test(url)) img.crossOrigin = "anonymous";
       img.onload = function(){
         try {
+          REFIMG[name] = img;
           REF[name] = refSig(img);
           REF[name].w = img.naturalWidth;
           REF[name].h = img.naturalHeight;
@@ -816,6 +818,71 @@ function fitSig(img, x, y, w, h){
   return describe(g.getImageData(0,0,GW,GH).data, false);
 }
 
+
+/* ── view experiment ────────────────────────────────────────────
+   Cards do not fill their frame the same way, so one fixed window
+   cannot suit all of them. These are a handful of standard views,
+   applied identically to the screenshot and the reference, with no
+   per-card configuration. */
+var VIEWS = [
+  ["full",    0.00, 1.00, 0.04],
+  ["top",     0.00, 0.55, 0.06],
+  ["middle",  0.15, 0.55, 0.06],
+  ["centre",  0.10, 0.70, 0.12],
+  ["lower",   0.35, 0.55, 0.06],
+  ["artwork", ART_Y0, ART_Y1-ART_Y0, ART_X0]
+];
+
+function viewOf(img, X, Y, W, H, v){
+  return fitSig(img, X + W*v[3], Y + H*v[1], W*(1-v[3]*2), H*v[2]);
+}
+function refView(name, v){
+  var im = REFIMG[name];
+  if(!im) return null;
+  var s = viewOf(im, 0, 0, im.naturalWidth, im.naturalHeight, v);
+  s.m = []; for(var i=0;i<GW*GH;i++) s.m.push(1);
+  return s;
+}
+
+function expBlock(){
+  if(!S.img || !S.taps.length || !Object.keys(REFIMG).length) return "";
+  var rows = "";
+  EXPECT.forEach(function(want, i){
+    var t = S.taps[i];
+    if(!t || !REFIMG[want]) return;
+    rows += '<div class="diagH" style="margin-top:8px">'+esc(want)+'</div>';
+    VIEWS.forEach(function(v){
+      var sg = viewOf(S.img, t.x-t.w/2, t.y-t.h/2, t.w, t.h, v);
+      var rc = refView(want, v);
+      if(!rc) return;
+      function metric(fn){
+        var good = fn(sg, rc);
+        var bad = 1e9;
+        FOILS.concat(["Prince","Lava Hound","Furnace","Vines"]).forEach(function(f){
+          if(f===want) return;
+          var rf = refView(f, v);
+          if(rf) bad = Math.min(bad, fn(sg, rf));
+        });
+        return [good, bad];
+      }
+      var c = metric(colourDist);
+      var e = metric(edgeDist);
+      var b = metric(function(a,z){ return colourDist(a,z) + edgeDist(a,z)*0.8; });
+      function fmt(p){
+        var win = p[0] < p[1];
+        return '<b style="color:'+(win?"#7CE38B":"var(--mid)")+'">'
+          + p[0].toFixed(0)+'/'+p[1].toFixed(0)+'</b>';
+      }
+      rows += '<div><span>'+v[0]+'</span>'
+        + '<b style="min-width:150px;display:flex;gap:10px;justify-content:flex-end">'
+        + fmt(c) + fmt(e) + fmt(b) + '</b></div>';
+    });
+  });
+  return '<div class="diagCol"><div class="diagH">view experiment &middot; '
+    + 'correct/best-foil &middot; colour, edges, combined &middot; green means correct wins</div>'
+    + rows + '</div>';
+}
+
 function sweepBlock(){
   if(!S.img || !S.taps.length || !Object.keys(REF).length) return "";
   var ys = [0.00,0.05,0.10,0.15,0.20];
@@ -912,7 +979,7 @@ function pairBlock(){
 }
 
 function diagBlock(){
-  return '<div class="diag">' + baselineBlock() + sweepBlock() + pairBlock() + S.taps.map(function(t,i){
+  return '<div class="diag">' + baselineBlock() + expBlock() + sweepBlock() + pairBlock() + S.taps.map(function(t,i){
     var rows = (t.cands||[]).map(function(nm,j){
       var v = (t.scores && t.scores[nm]!==undefined) ? t.scores[nm].toFixed(1) : "-";
       return '<div><span>'+(j+1)+'. '+esc(nm)+'</span><b>'+v+'</b></div>';
