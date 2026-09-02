@@ -101,8 +101,9 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-of
   color:#101014;font-weight:800;font-size:.85rem;letter-spacing:.04em;text-transform:uppercase}
 .ghost{display:block;width:100%;min-height:44px;border-top:1px solid var(--line);
   color:var(--mid);font-size:.8rem}
-#wrap{position:relative}
-#shot{width:100%;display:block}
+#wrap{position:relative;display:inline-block;line-height:0;margin:0 auto}
+.wrapOuter{text-align:center;padding:8px 0}
+#shot{max-height:34vh;max-width:100%;width:auto;display:block}
 .mk{position:absolute;inset:0;pointer-events:none}
 .mk div{position:absolute;border:2px solid var(--acc);transform:translate(-50%,-50%)}
 .mk b{position:absolute;top:-8px;left:-2px;background:var(--acc);color:#101014;
@@ -209,15 +210,49 @@ var RAW = [
 ["Zappies",["C","Double attack speed"],["C","+2 Zappies"],["A","Mini Sparkies"]]
 ];
 
+
+var CARD_TIER = {
+"Barbarian Hut":"S","Dart Goblin":"S","Fireball":"S","Ice Wizard":"S","Executioner":"S",
+"Goblin Barrel":"S","Balloon":"S","Sparky":"S",
+"Musketeer":"A","Wizard":"A","Witch":"A","Golem":"A","X-bow":"A","Hog Rider":"A",
+"Royal Giant":"A","Giant":"A","Inferno Tower":"A","Mini P.E.K.K.A":"A","Valkyrie":"A",
+"Electro Wizard":"A","Tornado":"A","Poison":"A",
+"Knight":"B","The Log":"B","Zap":"B","Minions":"B","Skeleton Army":"B","Bats":"B",
+"Tombstone":"B","Cannon":"B","Tesla":"B","Arrows":"B","Rocket":"B","Baby Dragon":"B",
+"Prince":"B","Dark Prince":"B","Goblin Gang":"B","Furnace":"B","Mega Minion":"B",
+"Ice Spirit":"C","Fire Spirit":"C","Skeletons":"C","Spear Goblins":"C","Bomber":"C",
+"Archers":"C","Goblins":"C","Heal Spirit":"C","Electro Spirit":"C","Minion Horde":"C"
+};
+
+/* Cards in the pool that we have a published tier for but no
+   modifier text yet. Added so recognition never comes up blank. */
+var EXTRA = ["Sparky","Balloon","Hog Rider","Tornado","Prince","Dark Prince",
+"Mini P.E.K.K.A","Valkyrie","Goblin Gang","Minions","Bats","Cannon","Fire Spirit",
+"Goblins","Archers","Spear Goblins","Skeletons","Minion Horde","Mega Minion",
+"Skeleton Army","Arrows","Zap","Bomber","Heal Spirit","Tesla","The Log","Ice Spirit",
+"Poison","Wizard","Witch","Hunter"];
+
 var CARDS = RAW.map(function(x){
   return {
     card:x[0],
     common:{t:x[1][0], e:x[1][1]},
     rare:{t:x[2][0], e:x[2][1]},
     epic:{t:x[3][0], e:x[3][1]},
+    pt: CARD_TIER[x[0]] || null,
     avg:(TIER[x[1][0]].v + TIER[x[2][0]].v + TIER[x[3][0]].v)/3
   };
-}).sort(function(a,b){ return b.avg - a.avg; });
+});
+
+EXTRA.forEach(function(n){
+  for (var i=0;i<CARDS.length;i++) if (CARDS[i].card===n) return;
+  var t = CARD_TIER[n] || "B";
+  CARDS.push({ card:n, pt:t, avg:TIER[t].v, common:null, rare:null, epic:null });
+});
+
+/* Published card tier wins when we have one, otherwise fall back to
+   the average of the three modifier scores. */
+CARDS.forEach(function(c){ if (c.pt) c.avg = TIER[c.pt].v; });
+CARDS.sort(function(a,b){ return b.avg - a.avg; });
 
 function byName(n){ for (var i=0;i<CARDS.length;i++) if (CARDS[i].card===n) return CARDS[i]; return null; }
 function esc(s){
@@ -229,6 +264,15 @@ function esc(s){
 /* dHash: shrink crop to 9x8 grey, compare each pixel to its
    right neighbour. 64 bits of brightness shape, resolution independent. */
 var HW=9, HH=8, THRESH=12, LIB_KEY="chaosCardHashes";
+
+/* The "Choose Your Card" row sits in the same place every time.
+   These are fractions of image width and height, so they hold
+   across phone sizes. */
+var SLOTS = [
+  { x:0.213, y:0.531, w:0.235 },
+  { x:0.500, y:0.531, w:0.235 },
+  { x:0.787, y:0.531, w:0.235 }
+];
 
 function loadLib(){ try{ return JSON.parse(localStorage.getItem(LIB_KEY))||{}; }catch(e){ return {}; } }
 function saveLib(l){ try{ localStorage.setItem(LIB_KEY, JSON.stringify(l)); }catch(e){} }
@@ -262,6 +306,14 @@ function toggle(a,n,max){
 }
 
 function item(c,sel){
+  if (!c.common){
+    return '<div class="item'+(sel?" on":"")+'"><div class="head">'
+      + '<span class="nm">'+esc(c.card)+'</span>'
+      + '<div class="tiers"><span class="t" style="background:'+TIER[c.pt].c+'">'
+      + c.pt+'</span></div>'
+      + '<button class="add'+(sel?" on":"")+'" data-toggle="'+esc(c.card)+'">'
+      + (sel?"\u2713":"+")+'</button></div></div>';
+  }
   var boxes = R.map(function(r){
     return '<span class="t" style="background:'+TIER[c[r].t].c+'">'+c[r].t+'</span>';
   }).join("");
@@ -281,6 +333,7 @@ function item(c,sel){
 /* Share of a card's three modifiers at each tier. Equal thirds,
    grouped so two S mods read as one 67% block. */
 function share(c){
+  if (!c.common) return [{ t:c.pt, pct:1 }];
   var count = {};
   R.forEach(function(r){ count[c[r].t] = (count[c[r].t]||0) + 1; });
   return Object.keys(count)
@@ -304,6 +357,15 @@ function filtered(){
 }
 
 function verdict(c,win,rank){
+  if (!c.common){
+    return '<div class="pk'+(win?" win":"")+'">'
+      + (win?'<span class="tag">TAKE THIS</span>':"")
+      + '<div class="pkTop"><span class="pkNm">'
+      + (rank?'<span class="rk">'+rank+'</span>':"") + esc(c.card)+'</span>'
+      + '<span class="pkSc">'+c.pt+'</span></div>'
+      + '<div class="tbar" style="margin:0"><div style="width:100%;background:'
+      + TIER[c.pt].c+'"></div></div></div>';
+  }
   return '<div class="pk'+(win?" win":"")+'">'
     + (win?'<span class="tag">TAKE THIS</span>':"")
     + '<div class="pkTop"><span class="pkNm">'
@@ -322,37 +384,60 @@ function vScan(){
   var h = '<label class="cta">Load screenshot'
     + '<input type="file" accept="image/*" id="file" style="display:none"></label>';
 
-  if (S.img){
-    h += '<div id="wrap"><img id="shot" src="'+S.img.src+'" alt="">'
-      + '<div class="mk" id="mk"></div></div>'
-      + '<div class="eyebrow">Tap each card</div>';
+  if (!S.img){
+    h += '<div class="meta">Screenshot the card pick screen and load it. '
+      + 'It reads the three cards for you.</div>';
+    return h;
   }
 
   if (S.pending !== null){
-    h += '<div class="ask"><div class="askH">Which card?</div>'
+    h += '<div class="ask"><div class="askH">Card '+(S.pending+1)+' of 3. Which is it?</div>'
       + '<input class="srch" id="lq" placeholder="Search" value="'+esc(S.lq)+'" style="margin-top:10px">'
       + '<div class="opts">'
       + CARDS.filter(function(c){ return c.card.toLowerCase().indexOf(S.lq.toLowerCase())!==-1; })
              .map(function(c){ return '<button data-learn="'+esc(c.card)+'">'+esc(c.card)+'</button>'; })
              .join("")
-      + '</div><button class="ghost" data-cancel="1">Cancel</button></div>';
+      + '</div><button class="ghost" data-skip="1">Skip</button></div>';
   }
 
-  var found = S.taps.filter(function(t){ return t.name; });
-  if (found.length){
-    var rk = found.map(function(t){ return byName(t.name); })
+  var known = S.taps.filter(function(t){ return t.name; });
+  if (known.length){
+    var rk = known.map(function(t){ return byName(t.name); })
                   .sort(function(a,b){ return b.avg-a.avg; });
-    h += '<div class="list" style="margin-top:2px">'
-      + rk.map(function(c,i){ return verdict(c, i===0 && rk.length>1); }).join("") + '</div>';
+    h += '<div class="eyebrow">Best to worst</div><div class="list">'
+      + rk.map(function(c,i){ return verdict(c, i===0 && rk.length>1); }).join("")
+      + '</div>';
   }
 
-  if (S.img) h += '<button class="ghost" data-reset="1">Start over</button>';
+  h += '<div class="wrapOuter"><div id="wrap">'
+    + '<img id="shot" src="'+S.img.src+'" alt="">'
+    + '<div class="mk" id="mk"></div></div></div>';
 
+  h += '<button class="ghost" data-reset="1">New screenshot</button>';
   var n = libCount(S.lib);
   h += '<div class="meta">'+n+' learned'
     + (n ? ' &middot; <button data-wipe="1" style="color:var(--low);text-decoration:underline;padding:0">reset</button>' : '')
     + '</div>';
   return h;
+}
+
+/* Crop the three slots, hash each, name the ones we know. */
+function readSlots(){
+  S.taps = SLOTS.map(function(s){
+    var cx = S.img.naturalWidth * s.x;
+    var cy = S.img.naturalHeight * s.y;
+    var size = S.img.naturalWidth * s.w;
+    var hash = hashCrop(S.img, cx, cy, size);
+    return { x:cx, y:cy, size:size, hash:hash, name:identify(hash, S.lib) };
+  });
+  nextUnknown();
+}
+
+function nextUnknown(){
+  S.pending = null;
+  for (var i=0;i<S.taps.length;i++){
+    if (!S.taps[i].name && !S.taps[i].skipped){ S.pending = i; S.lq = ""; return; }
+  }
 }
 
 function vCards(){
@@ -441,12 +526,13 @@ function render(){
 
 function marks(){
   var box=document.getElementById("mk"), shot=document.getElementById("shot");
-  if(!box||!shot) return;
+  if(!box||!shot||!S.img) return;
+  if(!shot.clientWidth){ shot.onload=marks; return; }
   var sc = shot.clientWidth / S.img.naturalWidth;
-  box.innerHTML = S.taps.map(function(t){
+  box.innerHTML = S.taps.map(function(t,i){
     var s=t.size*sc;
     return '<div style="left:'+(t.x*sc)+'px;top:'+(t.y*sc)+'px;width:'+s+'px;height:'+s+'px">'
-      + '<b>'+(t.name?esc(t.name):"?")+'</b></div>';
+      + '<b>'+(t.name?esc(t.name):(i+1))+'</b></div>';
   }).join("");
 }
 
@@ -459,29 +545,21 @@ document.getElementById("view").addEventListener("change",function(e){
   if(e.target.id!=="file") return;
   var f=e.target.files&&e.target.files[0]; if(!f) return;
   var i=new Image();
-  i.onload=function(){ S.img=i; S.taps=[]; S.pending=null; render(); };
+  i.onload=function(){ S.img=i; readSlots(); render(); };
   i.src=URL.createObjectURL(f);
 });
 
 document.getElementById("view").addEventListener("click",function(e){
-  var shot=e.target.closest("#shot");
-  if(shot){
-    var rc=shot.getBoundingClientRect(), sc=S.img.naturalWidth/rc.width;
-    var x=(e.clientX-rc.left)*sc, y=(e.clientY-rc.top)*sc;
-    var size=Math.round(S.img.naturalWidth/8);
-    var h=hashCrop(S.img,x,y,size), hit=identify(h,S.lib);
-    S.taps.push({x:x,y:y,size:size,hash:h,name:hit});
-    if(!hit){ S.pending=S.taps.length-1; S.lq=""; }
-    render(); return;
-  }
   var l=e.target.closest("[data-learn]");
   if(l){
     var n=l.dataset.learn, t=S.taps[S.pending];
     if(!S.lib[n]) S.lib[n]=[];
     S.lib[n].push(t.hash); saveLib(S.lib);
-    t.name=n; S.pending=null; render(); return;
+    t.name=n; nextUnknown(); render(); return;
   }
-  if(e.target.closest("[data-cancel]")){ S.taps.splice(S.pending,1); S.pending=null; render(); return; }
+  if(e.target.closest("[data-skip]")){
+    S.taps[S.pending].skipped=true; nextUnknown(); render(); return;
+  }
   if(e.target.closest("[data-reset]")){ S.img=null; S.taps=[]; S.pending=null; render(); return; }
   if(e.target.closest("[data-wipe]")){ S.lib={}; saveLib(S.lib); render(); return; }
 
