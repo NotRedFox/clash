@@ -103,6 +103,9 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-of
   background:var(--bg);border-radius:4px}
 .grid img{width:100%;max-width:56px;aspect-ratio:3/4;object-fit:contain}
 .pairs{display:flex;gap:14px;flex-wrap:wrap}
+.cmpRow{border-top:1px solid var(--line);padding:8px 0}
+.cmpHead{font-size:.62rem;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--low);margin-bottom:5px}
 .pair{display:flex;gap:4px}
 .pair img,.ids img{width:54px;height:72px;object-fit:cover;background:#000;display:block}
 .pair span,.ids span{font-size:.55rem;color:var(--low);display:block;margin-top:3px;text-align:center}
@@ -1283,6 +1286,46 @@ function refFeat(name){
 
 
 
+
+/* ── crop against candidates ────────────────────────────────────
+   The extracted pixels beside the reference art for the top three
+   candidates, at the same displayed size. If the crop plainly is not
+   any of them, the evidence is weak rather than the crop being wrong. */
+function compareBlock(){
+  if(!S.img || !S.taps.length) return "";
+  var rows = S.taps.map(function(t,i){
+    if(!t.cands || !t.cands.length) return "";
+    var w=Math.round(t.w), h=Math.round(t.h);
+    var c=document.createElement("canvas"); c.width=w; c.height=h;
+    var g=c.getContext("2d"); g.imageSmoothingEnabled=false;
+    g.drawImage(S.img, t.x-t.w/2, t.y-t.h/2, t.w, t.h, 0, 0, w, h);
+    var url; try{ url=c.toDataURL(); }catch(e){ url=""; }
+
+    var refs = t.cands.slice(0,3).map(function(nm,k){
+      var d = t.detail && t.detail[nm];
+      return '<div style="text-align:center">'
+        + (SLUG[nm] ? '<img src="cards/'+SLUG[nm]+'.png" '
+            + 'style="width:56px;height:72px;object-fit:contain;background:#000;display:block">' : "")
+        + '<span>'+(k+1)+'. '+esc(nm)
+        + (d ? '<br>'+d.geo+' geo &middot; '+d.good+' good' : '')
+        + '</span></div>';
+    }).join("");
+
+    return '<div class="cmpRow"><div class="cmpHead">slot '+(i+1)
+      + ' &middot; ' + w + 'x' + h
+      + ' &middot; conf ' + ((t.conf||0)*100).toFixed(0) + '</div>'
+      + '<div class="pairs">'
+      + '<div style="text-align:center">'
+      + '<img src="'+url+'" style="width:56px;height:72px;object-fit:contain;'
+      + 'image-rendering:pixelated;background:#000;display:block;'
+      + 'outline:2px solid var(--acc)"><span>crop</span></div>'
+      + refs + '</div></div>';
+  }).join("");
+
+  return '<div class="diagCol"><div class="diagH">crop against top three '
+    + 'references</div>'+rows+'</div>';
+}
+
 /* ── keypoint correspondence ────────────────────────────────────
    Where do the matched points actually land? If most sit on the
    frame, the elixir badge or the level banner, then the matcher is
@@ -1359,7 +1402,7 @@ function boxOverlay(){
 
 function rawCrops(){
   if(!S.img || !S.taps.length) return "";
-  var out = S.taps.slice(0,2).map(function(t,i){
+  var out = S.taps.slice(0, S.taps.length>6?36:2).map(function(t,i){
     var w=Math.round(t.w), h=Math.round(t.h);
     var c=document.createElement("canvas"); c.width=w; c.height=h;
     var g=c.getContext("2d");
@@ -1606,7 +1649,7 @@ function pairBlock(){
 }
 
 function diagBlock(){
-  return '<div class="diag">' + kpBlock() + boxOverlay() + rawCrops() + cropScaleTest() + baselineBlock() + resTest() + featureBlock() + expBlock() + sweepBlock() + pairBlock() + S.taps.map(function(t,i){
+  return '<div class="diag">' + compareBlock() + kpBlock() + boxOverlay() + rawCrops() + cropScaleTest() + baselineBlock() + resTest() + featureBlock() + expBlock() + sweepBlock() + pairBlock() + S.taps.map(function(t,i){
     var rows = (t.cands||[]).map(function(nm,j){
       var d = t.detail && t.detail[nm];
       var v = d ? ('geo '+d.geo+' &middot; good '+d.good
