@@ -602,6 +602,110 @@ function normalise(map, keys, lowerIsBetter){
   return out;
 }
 
+
+/* ── template registration ──────────────────────────────────────
+   For small cards, keypoints are too few to be reliable. Template
+   matching uses every pixel instead: normalise the crop to the
+   reference shape, then measure luminance, colour and edge
+   difference, allowing a little slack in position and scale.
+
+   Coarse to fine: every reference is scored cheaply at 16x20, then
+   only the closest are rescored at 32x40. */
+var TC_W=16, TC_H=20, TF_W=32, TF_H=40;
+
+function template(img, x, y, w, h, tw, th){
+  var c=document.createElement("canvas"); c.width=tw; c.height=th;
+  var g=c.getContext("2d",{willReadFrequently:true});
+  g.fillStyle="#000"; g.fillRect(0,0,tw,th);
+  g.drawImage(img, x, y, w, h, 0, 0, tw, th);
+  var d=g.getImageData(0,0,tw,th).data;
+  var rgb=new Float32Array(tw*th*3), lum=new Float32Array(tw*th);
+  var mr=0,mg=0,mb=0,ml=0, n=tw*th;
+  for(var i=0;i<n;i++){
+    var r=d[i*4], gg=d[i*4+1], b=d[i*4+2];
+    rgb[i*3]=r; rgb[i*3+1]=gg; rgb[i*3+2]=b;
+    lum[i]=0.299*r+0.587*gg+0.114*b;
+    mr+=r; mg+=gg; mb+=b; ml+=lum[i];
+  }
+  mr/=n; mg/=n; mb/=n; ml/=n;
+  /* remove overall brightness and tint, so lighting differences
+     between an icon and an in-game render do not dominate */
+  for(i=0;i<n;i++){
+    rgb[i*3]-=mr; rgb[i*3+1]-=mg; rgb[i*3+2]-=mb;
+    lum[i]-=ml;
+  }
+  var edge=new Float32Array(n);
+  for(var y2=0;y2<th;y2++){
+    for(var x2=0;x2<tw;x2++){
+      var i0=y2*tw+x2;
+      var gx=(x2<tw-1?lum[i0+1]:lum[i0])-lum[i0];
+      var gy=(y2<th-1?lum[i0+tw]:lum[i0])-lum[i0];
+      edge[i0]=Math.sqrt(gx*gx+gy*gy);
+    }
+  }
+  return { rgb:rgb, lum:lum, edge:edge, n:n };
+}
+
+function tplDist(a, b){
+  var s1=0, s2=0, i;
+  for(i=0;i<a.n*3;i++){ var d1=a.rgb[i]-b.rgb[i]; s1+=d1*d1; }
+  for(i=0;i<a.n;i++){ var d2=a.edge[i]-b.edge[i]; s2+=d2*d2; }
+  return Math.sqrt(s1/(a.n*3)) + Math.sqrt(s2/a.n)*0.7;
+}
+
+function refTemplates(img){
+  var W=img.naturalWidth, H=img.naturalHeight;
+  return {
+    coarse: template(img, 0, 0, W, H, TC_W, TC_H),
+    fine:   template(img, 0, 0, W, H, TF_W, TF_H)
+  };
+}
+
+/* Small alignment offsets, as fractions of the card box. */
+var TPL_SHIFTS = [[0,0,1],[ -0.04,0,1],[0.04,0,1],[0,-0.04,1],[0,0.04,1],
+                  [0,0,0.94],[0,0,1.06]];
+
+function templateRank(img, X, Y, W, H, names){
+  var coarse={}, i, k;
+  var shots=[], shotsF=[];
+  TPL_SHIFTS.forEach(function(s){
+    var w2=W*s[2], h2=H*s[2];
+    var x=X+W*s[0]+(W-w2)/2, y=Y+H*s[1]+(H-h2)/2;
+    shots.push(template(img, x, y, w2, h2, TC_W, TC_H));
+    shotsF.push([x,y,w2,h2]);
+  });
+
+  names.forEach(function(nm){
+    var t=REF[nm] && REF[nm].tpl;
+    if(!t){ coarse[nm]=1e9; return; }
+    var best=1e9;
+    for(i=0;i<shots.length;i++){
+      var d=tplDist(shots[i], t.coarse);
+      if(d<best) best=d;
+    }
+    coarse[nm]=best;
+  });
+
+  var short = names.slice().sort(function(a,b){ return coarse[a]-coarse[b]; }).slice(0,14);
+  var fine={};
+  short.forEach(function(nm){
+    var t=REF[nm].tpl, best=1e9;
+    for(i=0;i<shotsF.length;i++){
+      var r=shotsF[i];
+      var st=template(img, r[0], r[1], r[2], r[3], TF_W, TF_H);
+      var d=tplDist(st, t.fine);
+      if(d<best) best=d;
+    }
+    fine[nm]=best;
+  });
+
+  var out={};
+  names.forEach(function(nm){
+    out[nm] = fine[nm]!==undefined ? fine[nm] : coarse[nm]*2 + 200;
+  });
+  return out;
+}
+
 /* ── one recognition path ──────────────────────────────────────── */
 function recognise(cx, cy, w, hh){
   function crop(kx, ky){
@@ -656,6 +760,31 @@ function recognise(cx, cy, w, hh){
     featRaw[nm] = m.geo*0.65 + m.good*0.20 + m.quality*100*0.15;
     artRaw[nm]  = REF[nm] ? artworkScore(S.img, cx-w/2, cy-hh/2, w, hh, REF[nm]) : 1e9;
   });
+
+  /* Small cards go to template registration, which uses every pixel
+     rather than a handful of keypoints. Full size cards stay on
+     feature matching, which is accurate for them. */
+  var tiny = w < 70;
+  if(tiny){
+    var tplRaw = templateRank(S.img, cx-w/2, cy-hh/2, w, hh, pool);
+    var tN = normalise(tplRaw, pool, true);
+    var fN2 = normalise(featRaw, pool, false);
+    var sc={};
+    pool.forEach(function(nm){
+      sc[nm] = -(tN[nm]*0.75 + fN2[nm]*0.25);
+      detail[nm].combined = -sc[nm];
+      detail[nm].art = tplRaw[nm];
+    });
+    var rankedT = pool.slice().sort(function(a,b){ return sc[a]-sc[b]; });
+    var cT = 0;
+    if(rankedT[0] && rankedT[1]){
+      cT = Math.max(0, Math.min(1,
+        (detail[rankedT[0]].combined - detail[rankedT[1]].combined) * 5));
+    }
+    return { sig:mySig, dmask:dmask, cost:cost, name:rankedT[0]||null,
+             ranked:rankedT.slice(0,8), conf:cT, scores:sc, detail:detail,
+             pool:pool.length, kp:kpCount, why:"template" };
+  }
 
   /* Feature matching is the primary signal. Artwork similarity only
      separates candidates whose geometry is genuinely tied, and can
@@ -732,6 +861,7 @@ function loadRefs(cb){
           REFIMG[name] = img;
           REF[name] = refSig(img);
           REF[name].views = refViews(img);
+          REF[name].tpl = refTemplates(img);
           REF[name].w = img.naturalWidth;
           REF[name].h = img.naturalHeight;
         }
