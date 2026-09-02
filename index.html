@@ -377,10 +377,6 @@ function shotDist(a,b){
 
 
 
-function refSig(img){
-  return gridSig(img, 0, 0, img.naturalWidth, img.naturalHeight, false);
-}
-
 function loadRefs(cb){
   if (refState.running) return;
   try {
