@@ -1000,7 +1000,7 @@ var COST = {
 };
 
 var S = { tab:"scan", deck:[], offer:[], open:null, q:"",
-          img:null, taps:[], pending:null, diag:false, mode:"triple", unique:true, lib:loadLib(), lq:"" };
+          img:null, taps:[], pending:null, diag:false, mode:"triple", unique:true, recog:"auto", lib:loadLib(), lq:"" };
 
 function toggle(a,n,max){ var i=a.indexOf(n); if(i!==-1) a.splice(i,1); else if(a.length<max) a.push(n); }
 
@@ -1286,6 +1286,149 @@ function refFeat(name){
 
 
 
+
+
+/* ── visual embeddings ──────────────────────────────────────────
+   A pretrained vision model turns each image into a vector that
+   captures what the picture is of, rather than which local textures
+   it contains. Cards are then ranked by cosine similarity against
+   the same 74 references. No labelling and no training.
+
+   The model is fetched from a CDN on first use, so this path is
+   opt-in: everything else in the app works offline. */
+var EMB = {
+  ready:false, loading:false, err:null, pipe:null,
+  refs:{}, done:0, total:0, RawImage:null, mode:"auto"
+};
+var EMB_KEY = "chaosEmbRefs_v1";
+
+/* Reference vectors go to IndexedDB: 74 x 512 floats is too large
+   for localStorage but trivial for IDB, so the second run skips
+   embedding the references entirely. */
+function idb(){
+  return new Promise(function(res, rej){
+    var r = indexedDB.open("chaosDraft", 1);
+    r.onupgradeneeded = function(){ r.result.createObjectStore("kv"); };
+    r.onsuccess = function(){ res(r.result); };
+    r.onerror = function(){ rej(r.error); };
+  });
+}
+async function idbGet(k){
+  try{
+    var db = await idb();
+    return await new Promise(function(res){
+      var t = db.transaction("kv").objectStore("kv").get(k);
+      t.onsuccess = function(){ res(t.result); };
+      t.onerror = function(){ res(null); };
+    });
+  }catch(e){ return null; }
+}
+async function idbSet(k, v){
+  try{
+    var db = await idb();
+    db.transaction("kv","readwrite").objectStore("kv").put(v, k);
+  }catch(e){}
+}
+
+function embStatus(){
+  if(EMB.err) return "error: " + EMB.err;
+  if(EMB.loading) return "loading " + EMB.done + "/" + EMB.total;
+  if(EMB.ready) return "ready, " + Object.keys(EMB.refs).length + " references";
+  return "off";
+}
+
+async function embInit(){
+  if(EMB.ready || EMB.loading) return;
+  EMB.loading = true; EMB.err = null; EMB.done = 0; EMB.total = 0;
+  render();
+  try{
+    var mod = await import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2");
+    EMB.RawImage = mod.RawImage;
+    EMB.pipe = await mod.pipeline("image-feature-extraction",
+                                  "Xenova/clip-vit-base-patch32",
+                                  { quantized:true });
+    var cached = await idbGet(EMB_KEY);
+    var names = Object.keys(REFIMG);
+    if(cached && Object.keys(cached).length >= names.length){
+      EMB.refs = cached;
+      EMB.ready = true; EMB.loading = false;
+      render();
+      return;
+    }
+    EMB.total = names.length;
+    for(var i=0;i<names.length;i++){
+      var nm = names[i];
+      EMB.refs[nm] = await embedImage(REFIMG[nm], 0, 0,
+                                      REFIMG[nm].naturalWidth, REFIMG[nm].naturalHeight);
+      EMB.done++;
+      if(EMB.done % 8 === 0) render();
+    }
+    await idbSet(EMB_KEY, EMB.refs);
+    EMB.ready = true;
+  } catch(e){
+    EMB.err = (e && e.message) ? e.message : String(e);
+  }
+  EMB.loading = false;
+  render();
+}
+
+/* Crops are enlarged before embedding: the model expects 224px, and
+   feeding it a 39px image would waste most of its input. */
+async function embedImage(img, x, y, w, h){
+  var c = document.createElement("canvas");
+  c.width = 224; c.height = 224;
+  var g = c.getContext("2d");
+  g.fillStyle = "#000"; g.fillRect(0,0,224,224);
+  var s = Math.min(224/w, 224/h), dw = w*s, dh = h*s;
+  g.imageSmoothingQuality = "high";
+  g.drawImage(img, x, y, w, h, (224-dw)/2, (224-dh)/2, dw, dh);
+  var raw = await EMB.RawImage.fromURL(c.toDataURL());
+  var out = await EMB.pipe(raw, { pooling:"mean", normalize:true });
+  return Array.from(out.data);
+}
+
+function cosine(a,b){
+  var d=0;
+  for(var i=0;i<a.length;i++) d += a[i]*b[i];
+  return d;   /* already normalised */
+}
+
+async function embScan(){
+  if(!EMB.ready || !S.img || !S.taps.length) return;
+  for(var i=0;i<S.taps.length;i++){
+    var t = S.taps[i];
+    var v = await embedImage(S.img, t.x-t.w/2, t.y-t.h/2, t.w, t.h);
+    var scored = Object.keys(EMB.refs).map(function(nm){
+      return { nm:nm, s:cosine(v, EMB.refs[nm]) };
+    }).sort(function(a,b){ return b.s-a.s; });
+    t.emb = scored.slice(0,5);
+    t.featureName = t.featureName || t.name;
+    if(S.recog !== "feature" && scored.length) t.name = scored[0].nm;
+    if(i % 6 === 0) render();
+  }
+  render();
+}
+
+function embBlock(){
+  if(!S.img || !S.taps.length) return "";
+  var rows = S.taps.map(function(t,i){
+    if(!t.emb) return "";
+    var best = t.emb[0];
+    var agree = best && best.nm === t.name;
+    return '<div><span'+(agree?'':' style="color:#E4483F"')+'>slot '+(i+1)
+      + ' &middot; feature ' + esc(t.name||"-") + '</span>'
+      + '<b>' + t.emb.map(function(e){
+          return esc(e.nm)+' '+e.s.toFixed(3);
+        }).join(' &middot; ') + '</b></div>';
+  }).join("");
+  return '<div class="diagCol"><div class="diagH">embeddings &middot; '
+    + embStatus() + ' &middot; top five per slot, red where it disagrees '
+    + 'with the feature matcher</div>'
+    + '<div><span>model</span><b><button data-emb="1" '
+    + 'style="color:var(--acc);text-decoration:underline;padding:0">'
+    + (EMB.ready ? "rescan" : "load model (about 90MB)") + '</button></b></div>'
+    + rows + '</div>';
+}
 
 /* ── crop against candidates ────────────────────────────────────
    The extracted pixels beside the reference art for the top three
@@ -1649,7 +1792,7 @@ function pairBlock(){
 }
 
 function diagBlock(){
-  return '<div class="diag">' + compareBlock() + kpBlock() + boxOverlay() + rawCrops() + cropScaleTest() + baselineBlock() + resTest() + featureBlock() + expBlock() + sweepBlock() + pairBlock() + S.taps.map(function(t,i){
+  return '<div class="diag">' + embBlock() + compareBlock() + kpBlock() + boxOverlay() + rawCrops() + cropScaleTest() + baselineBlock() + resTest() + featureBlock() + expBlock() + sweepBlock() + pairBlock() + S.taps.map(function(t,i){
     var rows = (t.cands||[]).map(function(nm,j){
       var d = t.detail && t.detail[nm];
       var v = d ? ('geo '+d.geo+' &middot; good '+d.good
@@ -1709,6 +1852,19 @@ function vScan(){
       + ' &middot; scale ' + (dispW ? (S.img.naturalWidth/dispW).toFixed(2) : "?")
       + (t0 ? ' &middot; slot crop original ' + Math.round(t0.w) + ' x ' + Math.round(t0.h) : "")
       + '</div>';
+    var recogLine = '<div class="meta" style="padding:0 16px 6px">'
+      + 'recognition: '
+      + (EMB.err
+          ? '<span style="color:#E4483F">embedding unavailable, using fallback matcher</span>'
+          : EMB.loading ? 'loading embedding model ' + EMB.done + '/' + EMB.total
+          : EMB.ready ? '<span style="color:#7CE38B">embeddings</span>'
+          : 'feature matcher')
+      + ' &middot; '
+      + ["auto","feature","both"].map(function(k){
+          return '<button data-recog="'+k+'" style="padding:0 6px;color:'
+            + (S.recog===k?"var(--acc)":"var(--low)")+'">'+k+'</button>';
+        }).join("")
+      + '</div>';
     var uniqLine = (S.taps.length > 6)
       ? '<div class="meta" style="padding:0 16px 6px">'
         + '<button data-uniq="1" style="color:'+(S.unique?"var(--acc)":"var(--low)")
@@ -1737,7 +1893,7 @@ function vScan(){
           ? ((S.taps[bestSlot].conf||0)*100).toFixed(0) : "-") + '</div>'
     h += '<div class="eyebrow">Best to worst &middot; tap a name to correct'
       + (lowest < 0.25 ? ' &middot; low confidence' : '') + '</div>'
-      + thin + uniqLine + regionLine
+      + thin + recogLine + uniqLine + regionLine
       + '<div class="meta" style="padding:0 16px 8px">elixir read: '+esc(costs)+'</div>'
       + diagBlock()
       + '<div class="list">'
@@ -1795,6 +1951,10 @@ function readSlots(){
   });
   globalAssign();
   nextUnknown();
+  if(S.recog !== "feature"){
+    if(EMB.ready) embScan();
+    else if(!EMB.loading && !EMB.err) embInit().then(embScan);
+  }
 }
 /* Only set by tapping a result to correct it. */
 function nextUnknown(){
@@ -1900,6 +2060,16 @@ document.getElementById("view").addEventListener("click",function(e){
     if(S.lib[n].length>6) S.lib[n].shift();
     saveLib(S.lib);
     t.name=n; nextUnknown(); render(); return; }
+  var rg = e.target.closest("[data-recog]");
+  if(rg){
+    S.recog = rg.dataset.recog;
+    if(S.img) readSlots();
+    render(); return;
+  }
+  if(e.target.closest("[data-emb]")){
+    if(EMB.ready) embScan(); else embInit().then(embScan);
+    render(); return;
+  }
   if(e.target.closest("[data-uniq]")){
     S.unique=!S.unique; if(S.img) readSlots(); render(); return;
   }
