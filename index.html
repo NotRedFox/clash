@@ -1266,7 +1266,7 @@ function matchDetail(A, B){
     if(bins[k]>bestBin) bestBin=bins[k];
   });
 
-  return { good:pairs.length, geo:bestBin,
+  return { good:pairs.length, geo:bestBin, pairs:pairs,
            cands:cands, quality: cands ? pairs.length/cands : 0 };
 }
 
@@ -1281,6 +1281,59 @@ function refFeat(name){
   return FEAT[name];
 }
 
+
+
+/* ── keypoint correspondence ────────────────────────────────────
+   Where do the matched points actually land? If most sit on the
+   frame, the elixir badge or the level banner, then the matcher is
+   agreeing on furniture that every card shares rather than on the
+   artwork, which would explain ambiguous slots. */
+function kpBlock(){
+  if(!S.img || !S.taps.length) return "";
+  var picks = S.taps.length > 6 ? [0,8,14,15,23,24] : [0,1,2];
+  var out = picks.map(function(si){
+    var t = S.taps[si];
+    if(!t) return "";
+    var top = t.cands && t.cands[0];
+    if(!top || !refFeat(top)) return "";
+
+    var A = featureSet(S.img, t.x-t.w/2, t.y-t.h/2, t.w, t.h);
+    var m = matchDetail(A, refFeat(top));
+
+    var c=document.createElement("canvas"); c.width=FMW; c.height=FMH;
+    var g=c.getContext("2d");
+    var s=Math.min(FMW/t.w, FMH/t.h), dw=t.w*s, dh=t.h*s;
+    g.fillStyle="#000"; g.fillRect(0,0,FMW,FMH);
+    g.drawImage(S.img, t.x-t.w/2, t.y-t.h/2, t.w, t.h,
+                (FMW-dw)/2, (FMH-dh)/2, dw, dh);
+
+    /* artwork band, as used elsewhere, drawn for reference */
+    var ax=(FMW-dw)/2 + dw*ART_X0, ay=(FMH-dh)/2 + dh*ART_Y0;
+    var aw=dw*(ART_X1-ART_X0), ah=dh*(ART_Y1-ART_Y0);
+    g.strokeStyle="rgba(255,212,0,.5)"; g.lineWidth=1;
+    g.strokeRect(ax, ay, aw, ah);
+
+    var inArt=0;
+    (m.pairs||[]).forEach(function(p){
+      var x=p[0][0], y=p[0][1];
+      var hit = x>=ax && x<=ax+aw && y>=ay && y<=ay+ah;
+      if(hit) inArt++;
+      g.fillStyle = hit ? "#7CE38B" : "#E4483F";
+      g.fillRect(x-1, y-1, 3, 3);
+    });
+
+    var url; try{ url=c.toDataURL(); }catch(e){ url=""; }
+    var pct = m.pairs && m.pairs.length ? Math.round(inArt/m.pairs.length*100) : 0;
+    return '<div style="text-align:center">'
+      + '<img src="'+url+'" style="width:96px;display:block;background:#000">'
+      + '<span>slot '+(si+1)+' &middot; '+esc(top)+'<br>'
+      + m.good+' matched &middot; '+pct+'% in artwork</span></div>';
+  }).join("");
+
+  return '<div class="diagCol"><div class="diagH">matched keypoints &middot; '
+    + 'green inside the artwork band, red on frame, badge or banner</div>'
+    + '<div class="pairs">'+out+'</div></div>';
+}
 
 /* ── crop verification ─────────────────────────────────────────── */
 function boxOverlay(){
@@ -1553,7 +1606,7 @@ function pairBlock(){
 }
 
 function diagBlock(){
-  return '<div class="diag">' + boxOverlay() + rawCrops() + cropScaleTest() + baselineBlock() + resTest() + featureBlock() + expBlock() + sweepBlock() + pairBlock() + S.taps.map(function(t,i){
+  return '<div class="diag">' + kpBlock() + boxOverlay() + rawCrops() + cropScaleTest() + baselineBlock() + resTest() + featureBlock() + expBlock() + sweepBlock() + pairBlock() + S.taps.map(function(t,i){
     var rows = (t.cands||[]).map(function(nm,j){
       var d = t.detail && t.detail[nm];
       var v = d ? ('geo '+d.geo+' &middot; good '+d.good
@@ -1566,7 +1619,8 @@ function diagBlock(){
       + ' &middot; cost '+(t.cost===null||t.cost===undefined?"?":t.cost)
       + ' &middot; via '+(t.why||"-")+' &middot; mode '+S.mode
       + ' &middot; library '+(t.pool===undefined?"?":t.pool)
-      + ' &middot; crop '+Math.round(t.w)+'x'+Math.round(t.h)
+      + ' &middot; rect '+Math.round(t.x-t.w/2)+','+Math.round(t.y-t.h/2)
+      + ' '+Math.round(t.w)+'x'+Math.round(t.h)
       + ' &middot; kp '+(t.kp===undefined?"?":t.kp)
       + ' &middot; gap '+((t.conf||0)*100).toFixed(0)
       + (t.localBest && t.global && t.localBest!==t.global
