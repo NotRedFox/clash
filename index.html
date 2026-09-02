@@ -265,18 +265,6 @@ function identify(h,lib){
 
 /* Reference match: nearest colour signature, with the brightness
    hash as a tie-breaker. Returns null when nothing is close. */
-function identifyRefScored(sig, h){
-  var best=null, bd=1e9, second=1e9;
-  for(var n in REF){
-    if(!REF.hasOwnProperty(n)) continue;
-    var d = sigDist(sig, REF[n].s) + ham(h, REF[n].h) * 1.8;
-    if(d < bd){ second = bd; bd = d; best = n; }
-    else if(d < second){ second = d; }
-  }
-  /* always name the closest card. a wrong name is easy to tap and
-     fix, an unanswered question is not. */
-  return best ? { n:best, d:bd } : null;
-}
 
 
 var SLUG = {
@@ -309,48 +297,47 @@ var ART = [
 ];
 
 var REF = {};              /* card -> hash, built from card art */
-var REF_KEY = "chaosRefHashes_v7";
+var REF_KEY = "chaosRefHashes_v8";
 var refState = { done:0, total:0, failed:0, running:false };
 
 /* Same fingerprint as the screenshot crop: the centre square of
    the artwork, so both sides see the same shape. */
 
-/* Colour signature. The card art is far more distinctive by colour
-   than by brightness gradients, and colour survives the difference
-   between the icon and the in-game frame. A 6x6 grid keeps enough
-   spatial detail to separate cards that share a palette, like Golem
-   and Rune Giant. */
-var SIGN = 6;
-function signature(img, cx, cy, size){
-  var c=document.createElement("canvas"); c.width=SIGN; c.height=SIGN;
-  var x=c.getContext("2d",{willReadFrequently:true}), h=size/2;
-  x.drawImage(img, cx-h, cy-h, size, size, 0, 0, SIGN, SIGN);
-  var d=x.getImageData(0,0,SIGN,SIGN).data, out=[];
-  for(var i=0;i<SIGN*SIGN;i++){
-    var a=d[i*4+3]/255;                      /* transparent art reads as white */
-    out.push(d[i*4]*a+255*(1-a), d[i*4+1]*a+255*(1-a), d[i*4+2]*a+255*(1-a));
-  }
-  /* subtract the mean of each channel: compares how colour is
-     distributed across the card rather than how bright the shot was */
+/* Compare whole card to whole card.
+
+   Both the screenshot card and the reference image get squashed into
+   the same GW x GH grid of average colour, so the two descriptions
+   cover the same thing regardless of the source resolution or aspect.
+   Comparing square crops was the earlier mistake: a square taken from
+   a portrait card keeps a different slice depending on the source
+   shape, so the two sides were never describing the same region. */
+var GW = 7, GH = 9;
+var CARD_ASPECT = 0.81;          /* card width / height, measured */
+
+function gridSig(img, x, y, w, h){
+  var c=document.createElement("canvas"); c.width=GW; c.height=GH;
+  var g=c.getContext("2d",{willReadFrequently:true});
+  g.fillStyle="#fff"; g.fillRect(0,0,GW,GH);        /* flatten transparency */
+  g.drawImage(img, x, y, w, h, 0, 0, GW, GH);
+  var d=g.getImageData(0,0,GW,GH).data, out=[];
+  for(var i=0;i<GW*GH;i++) out.push(d[i*4], d[i*4+1], d[i*4+2]);
   for(var ch=0; ch<3; ch++){
-    var m=0, n=SIGN*SIGN;
+    var m=0, n=GW*GH;
     for(var j=0;j<n;j++) m += out[j*3+ch];
     m/=n;
-    for(var j2=0;j2<n;j2++) out[j2*3+ch] -= m;
+    for(var k=0;k<n;k++) out[k*3+ch] -= m;
   }
   return out;
 }
-function sigDist(a,b){
+function gridDist(a,b){
   var s=0;
   for(var i=0;i<a.length;i++){ var d=a[i]-b[i]; s+=d*d; }
   return Math.sqrt(s/a.length);
 }
 
-function hashImageCentre(img){
-  return hashCrop(img, img.naturalWidth/2, img.naturalHeight*0.5, img.naturalWidth);
-}
-function sigImageCentre(img){
-  return signature(img, img.naturalWidth/2, img.naturalHeight*0.5, img.naturalWidth);
+
+function refSig(img){
+  return gridSig(img, 0, 0, img.naturalWidth, img.naturalHeight);
 }
 
 function loadRefs(cb){
@@ -376,7 +363,7 @@ function loadRefs(cb){
       var img = new Image();
       img.crossOrigin = "anonymous";
       img.onload = function(){
-        try { REF[name] = { h:hashImageCentre(img), s:sigImageCentre(img) }; }
+        try { REF[name] = { s:refSig(img) }; }
         catch(err){ refState.failed++; tick(); return; }   /* tainted canvas */
         tick();
       };
@@ -501,18 +488,29 @@ function vScan(){
 
 function readSlots(){
   S.taps = SLOTS.map(function(s){
-    var cx=S.img.naturalWidth*s.x, cy=S.img.naturalHeight*s.y, size=S.img.naturalWidth*s.w;
-    var hash=hashCrop(S.img,cx,cy,size);
-    var name = identify(hash,S.lib);
+    var w  = S.img.naturalWidth * s.w;
+    var hh = w / CARD_ASPECT;
+    var cx = S.img.naturalWidth * s.x;
+    var cy = S.img.naturalHeight * s.y;
+    var x = cx - w/2, y = cy - hh/2;
+    var hash = hashCrop(S.img, cx, cy, w);
+    var name = identify(hash, S.lib);
     if(!name){
       var best=null, bd=1e9;
-      [0.82,0.92,1.0,1.1].forEach(function(k){
-        var g=identifyRefScored(signature(S.img,cx,cy,size*k), hashCrop(S.img,cx,cy,size*k));
-        if(g && g.d<bd){ bd=g.d; best=g.n; }
+      /* a little slack on the box, in case the row sits slightly
+         differently on other screen shapes */
+      [[1,1],[0.94,0.94],[1.06,1.06],[1,0.92],[1,1.08]].forEach(function(k){
+        var w2=w*k[0], h2=hh*k[1];
+        var sig = gridSig(S.img, cx-w2/2, cy-h2/2, w2, h2);
+        for(var n in REF){
+          if(!REF.hasOwnProperty(n)) continue;
+          var d = gridDist(sig, REF[n].s);
+          if(d < bd){ bd=d; best=n; }
+        }
       });
-      name=best;
+      name = best;
     }
-    return {x:cx,y:cy,size:size,hash:hash,name:name};
+    return {x:cx, y:cy, w:w, h:hh, size:w, hash:hash, name:name};
   });
   nextUnknown();
 }
