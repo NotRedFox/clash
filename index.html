@@ -295,13 +295,13 @@ var SLUG = {
 
 /* Card art, tried in order until one loads. */
 var ART = [
-  "https://cdn.royaleapi.com/static/img/cards-150/{s}.png",
-  "https://cdn.royaleapi.com/static/img/cards/{s}.png",
+  "cards/{s}.png",                                             /* same origin, always readable */
+  "https://cdn.royaleapi.com/static/img/cards-150/{s}.png",    /* fallback, often blocked by CORS */
   "https://royaleapi.github.io/cr-api-assets/cards/{s}.png"
 ];
 
 var REF = {};              /* card -> hash, built from card art */
-var REF_KEY = "chaosRefHashes";
+var REF_KEY = "chaosRefHashes_v2";
 var refState = { done:0, total:0, failed:0, running:false };
 
 /* Same fingerprint as the screenshot crop: the centre square of
@@ -593,6 +593,7 @@ document.getElementById("view").addEventListener("input",function(e){
 });
 window.addEventListener("resize",marks);
 render();
+loadRefs(function(){ if(S.img){ readSlots(); } render(); });
 </script>
 </body>
 </html>
