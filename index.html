@@ -626,7 +626,11 @@ function loadRefs(cb){
          makes the load fail if the host does not answer with it */
       if (/^https?:/.test(url)) img.crossOrigin = "anonymous";
       img.onload = function(){
-        try { REF[name] = refSig(img); }
+        try {
+          REF[name] = refSig(img);
+          REF[name].w = img.naturalWidth;
+          REF[name].h = img.naturalHeight;
+        }
         catch(err){ refState.failed++; refState.why = refState.why || ("read: "+err.message); tick(); return; }   /* tainted canvas */
         tick();
       };
@@ -781,6 +785,33 @@ function refCropURL(name, cb){
   return "";
 }
 
+function baselineBlock(){
+  var pairs = [
+    ["Rocket","Rocket"], ["Rocket","Tombstone"], ["Rocket","Graveyard"],
+    ["Golem","Golem"],   ["Golem","Prince"],     ["Golem","Lava Hound"],
+    ["Ice Spirit","Ice Spirit"], ["Ice Spirit","Ice Wizard"], ["Ice Spirit","Dart Goblin"]
+  ];
+  var rows = pairs.map(function(p){
+    var a=REF[p[0]], b=REF[p[1]];
+    var v = (a&&b) ? artScore(a,b).toFixed(1) : "-";
+    return '<div><span>'+esc(p[0])+' vs '+esc(p[1])+'</span><b>'+v+'</b></div>';
+  }).join("");
+
+  var t = S.taps[0];
+  var dims = "";
+  if(t){
+    var r = REF["Rocket"];
+    dims = '<div><span>screenshot crop px</span><b>'
+      + Math.round(t.w*(ART_X1-ART_X0))+' x '+Math.round(t.h*(ART_Y1-ART_Y0))+'</b></div>'
+      + '<div><span>reference source px</span><b>'
+      + (r&&r.w ? r.w+' x '+r.h : "?")+'</b></div>'
+      + '<div><span>both sampled to</span><b>'+GW+' x '+GH+'</b></div>';
+  }
+
+  return '<div class="diagCol"><div class="diagH">descriptor baseline &middot; '
+    + 'same image against itself should be 0</div>'+rows+dims+'</div>';
+}
+
 function refCells(){
   var k=Object.keys(REF)[0];
   if(!k||!REF[k]||!REF[k].m) return "?";
@@ -812,7 +843,7 @@ function pairBlock(){
 }
 
 function diagBlock(){
-  return '<div class="diag">' + pairBlock() + S.taps.map(function(t,i){
+  return '<div class="diag">' + baselineBlock() + pairBlock() + S.taps.map(function(t,i){
     var rows = (t.cands||[]).map(function(nm,j){
       var v = (t.scores && t.scores[nm]!==undefined) ? t.scores[nm].toFixed(1) : "-";
       return '<div><span>'+(j+1)+'. '+esc(nm)+'</span><b>'+v+'</b></div>';
