@@ -261,12 +261,23 @@ function identify(h,lib){
   for(var k in lib){ if(!lib.hasOwnProperty(k)) continue;
     for(var i=0;i<lib[k].length;i++){ var d=ham(h,lib[k][i]); if(d<bd){bd=d;best=k;} } }
   if (bd <= THRESH) return best;
-  /* fall back to card art, which is a looser match since the
-     in-game frame is not the same crop as the icon */
-  var rb=null, rd=999;
-  for(var n in REF){ if(!REF.hasOwnProperty(n)) continue;
-    var dd=ham(h,REF[n]); if(dd<rd){ rd=dd; rb=n; } }
-  return rd <= 20 ? rb : null;
+  return null;
+}
+
+/* Reference match: nearest colour signature, with the brightness
+   hash as a tie-breaker. Returns null when nothing is close. */
+function identifyRef(sig, h){
+  var best=null, bd=1e9, second=1e9;
+  for(var n in REF){
+    if(!REF.hasOwnProperty(n)) continue;
+    var d = sigDist(sig, REF[n].s) + ham(h, REF[n].h) * 0.6;
+    if(d < bd){ second = bd; bd = d; best = n; }
+    else if(d < second){ second = d; }
+  }
+  /* only trust it when the winner is clearly ahead of the runner up */
+  if (bd > 70) return null;
+  if (second - bd < 4) return null;
+  return best;
 }
 
 
@@ -300,13 +311,38 @@ var ART = [
 ];
 
 var REF = {};              /* card -> hash, built from card art */
-var REF_KEY = "chaosRefHashes_v3";
+var REF_KEY = "chaosRefHashes_v4";
 var refState = { done:0, total:0, failed:0, running:false };
 
 /* Same fingerprint as the screenshot crop: the centre square of
    the artwork, so both sides see the same shape. */
+
+/* Colour signature. The card art is far more distinctive by colour
+   than by brightness gradients, and colour survives the difference
+   between the icon and the in-game frame. 4x4 grid of mean RGB. */
+var SIGN = 4;
+function signature(img, cx, cy, size){
+  var c=document.createElement("canvas"); c.width=SIGN; c.height=SIGN;
+  var x=c.getContext("2d",{willReadFrequently:true}), h=size/2;
+  x.drawImage(img, cx-h, cy-h, size, size, 0, 0, SIGN, SIGN);
+  var d=x.getImageData(0,0,SIGN,SIGN).data, out=[];
+  for(var i=0;i<SIGN*SIGN;i++){
+    var a=d[i*4+3]/255;                      /* transparent art reads as white */
+    out.push(d[i*4]*a+255*(1-a), d[i*4+1]*a+255*(1-a), d[i*4+2]*a+255*(1-a));
+  }
+  return out;
+}
+function sigDist(a,b){
+  var s=0;
+  for(var i=0;i<a.length;i++){ var d=a[i]-b[i]; s+=d*d; }
+  return Math.sqrt(s/a.length);
+}
+
 function hashImageCentre(img){
-  return hashCrop(img, img.naturalWidth/2, img.naturalHeight*0.5, img.naturalWidth);
+  return hashCrop(img, img.naturalWidth/2, img.naturalHeight*0.5, img.naturalWidth*0.7);
+}
+function sigImageCentre(img){
+  return signature(img, img.naturalWidth/2, img.naturalHeight*0.5, img.naturalWidth*0.7);
 }
 
 function loadRefs(cb){
@@ -332,7 +368,7 @@ function loadRefs(cb){
       var img = new Image();
       img.crossOrigin = "anonymous";
       img.onload = function(){
-        try { REF[name] = hashImageCentre(img); }
+        try { REF[name] = { h:hashImageCentre(img), s:sigImageCentre(img) }; }
         catch(err){ refState.failed++; tick(); return; }   /* tainted canvas */
         tick();
       };
@@ -462,8 +498,11 @@ function vScan(){
 function readSlots(){
   S.taps = SLOTS.map(function(s){
     var cx=S.img.naturalWidth*s.x, cy=S.img.naturalHeight*s.y, size=S.img.naturalWidth*s.w;
-    var hash=hashCrop(S.img,cx,cy,size);
-    return {x:cx,y:cy,size:size,hash:hash,name:identify(hash,S.lib)};
+    var inner = size*0.7;
+    var hash=hashCrop(S.img,cx,cy,inner);
+    var sig =signature(S.img,cx,cy,inner);
+    var name = identify(hash,S.lib) || identifyRef(sig,hash);
+    return {x:cx,y:cy,size:size,hash:hash,name:name};
   });
   nextUnknown();
 }
