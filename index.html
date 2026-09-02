@@ -1059,6 +1059,31 @@ function refFeat(name){
   return FEAT[name];
 }
 
+function resTest(){
+  if(!S.img || !S.taps.length) return "";
+  var t = S.taps[0];
+  var top = t.cands && t.cands[0];
+  if(!top || !refFeat(top)) return "";
+
+  var big = featureSet(S.img, t.x-t.w/2, t.y-t.h/2, t.w, t.h);
+  var mBig = matchDetail(big, refFeat(top));
+
+  /* shrink the identical crop to 39x50, then match it the same way */
+  var c=document.createElement("canvas"); c.width=39; c.height=50;
+  var g=c.getContext("2d");
+  g.drawImage(S.img, t.x-t.w/2, t.y-t.h/2, t.w, t.h, 0, 0, 39, 50);
+  var small = featureSet(c, 0, 0, 39, 50);
+  var mSmall = matchDetail(small, refFeat(top));
+
+  return '<div class="diagCol"><div class="diagH">resolution test &middot; slot 1 vs '
+    + esc(top) + ' &middot; same crop at two sizes</div>'
+    + '<div><span>original '+Math.round(t.w)+'x'+Math.round(t.h)+'</span>'
+    + '<b>kp '+big.pts.length+' &middot; geo '+mBig.geo+' &middot; good '+mBig.good+'</b></div>'
+    + '<div><span>shrunk 39x50</span>'
+    + '<b>kp '+small.pts.length+' &middot; geo '+mSmall.geo+' &middot; good '+mSmall.good+'</b></div>'
+    + '</div>';
+}
+
 function featureBlock(){
   if(!S.img || !S.taps.length || !Object.keys(REFIMG).length) return "";
   var tests = ["Rocket","Golem","Heal Spirit"];
@@ -1248,7 +1273,7 @@ function pairBlock(){
 }
 
 function diagBlock(){
-  return '<div class="diag">' + baselineBlock() + featureBlock() + expBlock() + sweepBlock() + pairBlock() + S.taps.map(function(t,i){
+  return '<div class="diag">' + baselineBlock() + resTest() + featureBlock() + expBlock() + sweepBlock() + pairBlock() + S.taps.map(function(t,i){
     var rows = (t.cands||[]).map(function(nm,j){
       var d = t.detail && t.detail[nm];
       var v = d ? ('geo '+d.geo+' &middot; good '+d.good
@@ -1288,13 +1313,16 @@ function vScan(){
     var lowest = S.taps.filter(function(t){return t.name;})
                        .reduce(function(a,t){ return Math.min(a, t.conf===undefined?1:t.conf); }, 1);
     var costs = S.taps.map(function(t){ return t.cost || "?"; }).join("  ");
-    var cardPx = S.taps.length ? Math.round(S.taps[0].w) : 0;
-    var thin = cardPx < 70
-      ? '<div class="meta" style="padding:0 16px 6px;color:#E4483F">'
-        + 'cards are only '+cardPx+'px wide in this image. A full resolution '
-        + 'screenshot straight from the phone gives about three times the detail '
-        + 'and will recognise far better.</div>'
-      : "";
+    var shotEl = document.getElementById("shot");
+    var dispW = shotEl ? shotEl.clientWidth : 0;
+    var dispH = shotEl ? shotEl.clientHeight : 0;
+    var t0 = S.taps[0];
+    var thin = '<div class="meta" style="padding:0 16px 6px">'
+      + 'screenshot natural ' + S.img.naturalWidth + ' x ' + S.img.naturalHeight
+      + ' &middot; displayed ' + dispW + ' x ' + dispH
+      + ' &middot; scale ' + (dispW ? (S.img.naturalWidth/dispW).toFixed(2) : "?")
+      + (t0 ? ' &middot; slot crop original ' + Math.round(t0.w) + ' x ' + Math.round(t0.h) : "")
+      + '</div>';
     var regionLine = '<div class="meta" style="padding:0 16px 6px">mode '+esc(S.mode)
       + ' &middot; screen cards ' + S.taps.length + ' &middot; library '
       + Object.keys(REF).length + '</div>';
