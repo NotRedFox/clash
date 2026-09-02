@@ -274,17 +274,21 @@ function grid(cols, rows, x0, x1, y0, y1, w){
 }
 
 var LAYOUTS = {
-  triple: { label:"Triple draft", slots:[
+  triple: { label:"Triple draft", aspect:0.81, slots:[
     {x:0.213, y:0.542, w:0.246},
     {x:0.500, y:0.542, w:0.246},
     {x:0.787, y:0.542, w:0.246}
   ]},
-  normal: { label:"Draft", slots:[
-    {x:0.320, y:0.542, w:0.246},
-    {x:0.680, y:0.542, w:0.246}
-  ], unverified:true },
-  mega: { label:"Mega draft", slots: grid(6, 7, 0.13, 0.87, 0.28, 0.78, 0.135),
-    unverified:true }
+  /* measured from a real screenshot: two cards, centres at 0.341
+     and 0.651 of width, row centred at 0.428 of height */
+  draft: { label:"Draft", aspect:0.81, slots:[
+    {x:0.341, y:0.428, w:0.270},
+    {x:0.651, y:0.428, w:0.270}
+  ]},
+  /* measured by locating the magenta elixir badges: six columns at
+     0.1196 spacing and six rows at 0.0719 spacing, 36 cards */
+  mega: { label:"Mega draft", aspect:0.78,
+    slots: grid(6, 6, 0.190, 0.788, 0.3391, 0.6986, 0.108) }
 };
 
 var SLOTS = LAYOUTS.triple.slots;
@@ -1205,10 +1209,6 @@ function vScan(){
           + esc(LAYOUTS[k].label)+'</button>';
       }).join("")
     + '</div>'
-    + (LAYOUTS[S.mode].unverified
-        ? '<div class="meta">Mega draft slot positions are estimated. '
-          + 'Send a mega draft screenshot and they can be measured properly.</div>'
-        : "")
     + '<label class="cta">Load screenshot'
     + '<input type="file" accept="image/*" id="file" style="display:none"></label>';
   if(!S.img) return h + '<div class="meta">Screenshot the card pick screen. '
@@ -1270,7 +1270,7 @@ function readSlots(){
   SLOTS = LAYOUTS[S.mode].slots;
   S.taps = SLOTS.map(function(s){
     var w  = S.img.naturalWidth * s.w;
-    var hh = w / CARD_ASPECT;
+    var hh = w / (LAYOUTS[S.mode].aspect || CARD_ASPECT);
     var cx = S.img.naturalWidth * s.x;
     var cy = S.img.naturalHeight * s.y;
     var r = recognise(cx, cy, w, hh);
