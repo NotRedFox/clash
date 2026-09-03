@@ -12,7 +12,7 @@ to hand you something good, and identifies cards straight from a screenshot.
 - Screenshot recognition for three draft layouts, no labelling or training
 - Deck analysis against the real wave odds
 - Works offline once loaded, installable to a phone home screen
-- No accounts, no tracking, no model downloads
+- No accounts, no cookies, no model downloads
 
 ---
 
@@ -190,3 +190,19 @@ information see Supercell's Fan Content Policy:
 https://supercell.com/en/fan-content-policy/
 
 Not affiliated with Supercell.
+
+---
+
+## Analytics
+
+Page views and a few anonymous events are counted with
+[GoatCounter](https://www.goatcounter.com): which tab is opened, which draft
+mode is scanned, and how often a card is corrected. No cookies, no identifiers,
+nothing about the person, and no card or deck data.
+
+The correction count is the useful one. It is a direct measure of how often
+recognition gets a card wrong, which is otherwise invisible.
+
+To use it, sign up for a free GoatCounter account and replace `MYCODE` in the
+script tag at the top of `index.html` with your site code. Deleting that script
+tag removes analytics entirely and nothing else breaks.

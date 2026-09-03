@@ -132,6 +132,11 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-of
 @media (max-width:350px){ body{font-size:14px} }
 @media (prefers-reduced-motion:reduce){ .fil{transition:none} }
 </style>
+<!-- Analytics: GoatCounter. No cookies, no personal data, no consent
+     banner required. Replace MYCODE below with your own site code, or
+     delete this block entirely to run with no analytics at all. -->
+<script data-goatcounter="https://MYCODE.goatcounter.com/count"
+        async src="//gc.zgo.at/count.js"></script>
 </head>
 <body>
 
@@ -1170,6 +1175,18 @@ var COST = {
 "Prince":5,"Hog Rider":4,"Fire Spirit":1,"Miner":3,"Skeletons":1,"Goblins":2
 };
 
+
+/* Anonymous usage counts. No identifiers, no card data, nothing about
+   the person. Just which features get used, so effort goes to the
+   parts people actually reach for. */
+function track(path, title){
+  try{
+    if(window.goatcounter && window.goatcounter.count){
+      window.goatcounter.count({ path:path, title:title||path, event:true });
+    }
+  }catch(e){}
+}
+
 var S = { tab:"scan", deck:[], offer:[], open:null, q:"",
           img:null, taps:[], pending:null, diag:false, mode:"triple", unique:true, lib:loadLib(), lq:"" };
 
@@ -1621,6 +1638,7 @@ document.getElementById("view").addEventListener("change",function(e){
   var i=new Image();
   i.onload=function(){
     S.img=i; S.taps=[]; S.pending=null;
+    track("scan-"+S.mode, "Scan: "+S.mode);
     render();
     loadRefs(function(){ if(S.img){ readSlots(); render(); } });
   };
@@ -1644,7 +1662,8 @@ document.getElementById("view").addEventListener("click",function(e){
     if(COST[n]) learnDigit(COST[n], t.dmask);
     if(S.lib[n].length>6) S.lib[n].shift();
     saveLib(S.lib);
-    t.name=n; nextUnknown(); render(); return; }
+    t.name=n; track("correction", "Card corrected");
+    nextUnknown(); render(); return; }
   if(e.target.closest("[data-uniq]")){
     S.unique=!S.unique; if(S.img) readSlots(); render(); return;
   }
