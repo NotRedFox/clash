@@ -1876,12 +1876,13 @@ function vScan(){
     var rk = known.map(function(t){ return byName(t.name); })
                   .filter(Boolean)
                   .sort(function(a,b){ return b.avg-a.avg; });
-    /* Show a decent list, but only mark the top eight as worth
-       taking. Below that the ratings drop off enough that they are
-       reference rather than recommendation. */
+    /* Mega boards are a shortlist, so the top eight are all worth
+       taking. Triple and normal draft are a single pick, so only the
+       best one gets marked. */
     var shown = rk.slice(0, 20);
+    var marks = S.taps.length > 6 ? 8 : 1;
     h += '<div class="list">'
-      + shown.map(function(c,i){ return verdict(c, i < 8 && shown.length > 1); }).join("")
+      + shown.map(function(c,i){ return verdict(c, i < marks && shown.length > 1); }).join("")
       + '</div>';
   }
 
