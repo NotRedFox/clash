@@ -16,7 +16,7 @@ to hand you something good, and identifies cards straight from a screenshot.
 
 ---
 
-## Put it on your phone
+## How To put it on your phone
 
 It runs as a web app. No app store, no install, works on iPhone and Android.
 
