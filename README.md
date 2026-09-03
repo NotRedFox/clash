@@ -203,6 +203,5 @@ nothing about the person, and no card or deck data.
 The correction count is the useful one. It is a direct measure of how often
 recognition gets a card wrong, which is otherwise invisible.
 
-To use it, sign up for a free GoatCounter account and replace `MYCODE` in the
-script tag at the top of `index.html` with your site code. Deleting that script
-tag removes analytics entirely and nothing else breaks.
+Stats are at https://notredfox.goatcounter.com. Deleting the script tag at the
+top of `index.html` removes analytics entirely and nothing else breaks.
