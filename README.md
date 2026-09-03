@@ -2,11 +2,17 @@
 
 A reference tool for Clash Royale's Chaos mode and the draft modes.
 
-Every card has three modifiers, one common, one rare, one epic. This shows all of
-them with a tier rating, works out how likely your deck is to hand you something
-good, and compares cards you have been offered.
+Every card has three modifiers, one common, one rare and one epic. This shows
+all of them with a rating from real win rates, works out how likely your deck is
+to hand you something good, and identifies cards straight from a screenshot.
 
-**Live version:** https://notredfox.github.io/clash/
+**Live:** https://notredfox.github.io/clash/
+
+- 66 cards, 198 modifiers, every name, effect and rating
+- Screenshot recognition for three draft layouts, no labelling or training
+- Deck analysis against the real wave odds
+- Works offline once loaded, installable to a phone home screen
+- No accounts, no tracking, no model downloads
 
 ---
 
@@ -173,9 +179,14 @@ pixels.
 
 ---
 
-## Credits
+## Credits and licence
 
-Wave odds and modifier list from RoyaleAPI. Tier placements based on community
-tier lists.
+Wave odds, modifier names, effects and ratings from RoyaleAPI. Ratings are
+derived from real win rates across millions of battles. Card images are
+Supercell's, used under their Fan Content Policy.
+
+This material is unofficial and is not endorsed by Supercell. For more
+information see Supercell's Fan Content Policy:
+https://supercell.com/en/fan-content-policy/
 
 Not affiliated with Supercell.
