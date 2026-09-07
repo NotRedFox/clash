@@ -16,7 +16,7 @@ to hand you something good, and identifies cards straight from a screenshot.
 
 ---
 
-## How to put it on your phone
+## Put it on your phone
 
 It runs as a web app. No app store, no install, works on iPhone and Android.
 
@@ -190,6 +190,26 @@ information see Supercell's Fan Content Policy:
 https://supercell.com/en/fan-content-policy/
 
 Not affiliated with Supercell.
+
+---
+
+## Test screenshots
+
+`samples/` has one screenshot of each layout, useful for checking a change did
+not break recognition before pushing it.
+
+| File | Mode | Cards |
+|------|------|-------|
+| `samples/triple-draft.png` | Triple draft | 3 |
+| `samples/draft.png` | Draft | 2 |
+| `samples/mega-draft.png` | Mega draft | 36 |
+
+Pick the matching mode, load the file, and check the cards come back right.
+
+The mega sample is 362px wide, which is a resized copy rather than a native
+screenshot. Cards end up about 39px across, near the limit of what recognition
+can work with, so it doubles as a worst case. A screenshot taken straight from a
+phone is roughly three times that and recognises noticeably better.
 
 ---
 
